@@ -25,44 +25,44 @@ class MainWindow(QMainWindow):
         self.setMaximumSize(800, 600)
 
         # All scenes being initialized
-        self.uploadWidget   = UploadWidget(parent = self)
-        self.loadWidget     = LoadWidget(parent = self)
+        self.upload_widget   = UploadWidget(parent = self)
+        self.load_widget     = LoadWidget(parent = self)
 
-        self.uploadWidget.swap.connect(self._setView)
-        self.loadWidget.swap.connect(self._setView)
+        self.upload_widget.swap.connect(self._set_view)
+        self.load_widget.swap.connect(self._set_view)
 
-        # self.uploadWidget.filesRecieved.connect(self._startProcessing)
+        # self.upload_widget.files_recieved.connect(self._startProcessing)
         
-        self.stackLayout = QStackedLayout()
-        self.stackLayout.addWidget(self.uploadWidget)
-        self.stackLayout.addWidget(self.loadWidget)
+        self.stack_layout = QStackedLayout()
+        self.stack_layout.addWidget(self.upload_widget)
+        self.stack_layout.addWidget(self.load_widget)
 
         container = QWidget()
-        container.setLayout(self.stackLayout)
+        container.setLayout(self.stack_layout)
 
         self.setCentralWidget(container)
 
     @pyqtSlot(View)
-    def _setView(self, v):
+    def _set_view(self, v):
         match v:
-            case View.Upload:
-                self.stackLayout.setCurrentWidget(self.uploadWidget)
-            case View.Load:
-                self.stackLayout.setCurrentWidget(self.loadWidget)
+            case View.UPLOAD:
+                self.stack_layout.setCurrentWidget(self.upload_widget)
+            case View.LOAD:
+                self.stack_layout.setCurrentWidget(self.load_widget)
         
 def main():
     app = QApplication(sys.argv)
 
     qdarktheme.setup_theme("auto")
     
-    maxSize = QGuiApplication.primaryScreen().availableSize()
-    maxSize.scale(800, 600, Qt.AspectRatioMode.KeepAspectRatio)
+    max_size = QGuiApplication.primaryScreen().availableSize()
+    max_size.scale(800, 600, Qt.AspectRatioMode.KeepAspectRatio)
 
     window = MainWindow()
-    window.resize(maxSize)
+    window.resize(max_size)
     window.show()
 
-    sys.exit( app.exec() )
+    sys.exit(app.exec())
 
 if __name__ == '__main__':
     main()

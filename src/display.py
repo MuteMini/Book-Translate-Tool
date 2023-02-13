@@ -15,7 +15,7 @@ from PyQt6.QtGui import (
 ACCEPTABLE_FILES = ['png', 'jpg', 'jpeg']
 
 class UploadWidget(QWidget, ViewWidget):
-    filesRecieved = pyqtSignal(list)
+    files_recieved = pyqtSignal(list)
 
     def __init__(self, parent=None):
         super(QWidget, self).__init__(parent)
@@ -25,25 +25,25 @@ class UploadWidget(QWidget, ViewWidget):
 
         self._button = QPushButton()
         self._button.setText("Add Files")
-        self._button.clicked.connect(self._getFile)
+        self._button.clicked.connect(self._get_file)
 
-        self._uploadIcon = QLabel()
-        fileDiag = self.style().standardIcon( QStyle.StandardPixmap.SP_FileDialogStart )
-        self._uploadIcon.setPixmap( fileDiag.pixmap(50, 50) )
-        self._uploadIcon.setGeometry(50, 50, 50, 50)
+        self._upload_icon = QLabel()
+        file_dialog = self.style().standardIcon( QStyle.StandardPixmap.SP_FileDialogStart )
+        self._upload_icon.setPixmap(file_dialog.pixmap(50, 50))
+        self._upload_icon.setGeometry(50, 50, 50, 50)
 
-        buttonLayout = QVBoxLayout()
-        buttonLayout.addWidget(self._button)
+        button_layout = QVBoxLayout()
+        button_layout.addWidget(self._button)
 
-        gridLayout = QGridLayout()
-        gridLayout.addWidget(self._uploadIcon, 0, 0, Qt.AlignmentFlag.AlignHCenter)
-        gridLayout.addLayout(buttonLayout, 1, 0)
-        self.setLayout(gridLayout)
+        grid_layout = QGridLayout()
+        grid_layout.addWidget(self._upload_icon, 0, 0, Qt.AlignmentFlag.AlignHCenter)
+        grid_layout.addLayout(button_layout, 1, 0)
+        self.setLayout(grid_layout)
 
-    def _getFile(self):
-        fileName = QFileDialog.getOpenFileNames(self, "Open file", 'c:\\', "Image files (*.jpg *.png)")
-        self.filesRecieved.emit(fileName[0])
-        self.swap.emit(View.Load)
+    def _get_file(self):
+        file_name = QFileDialog.getOpenFileNames(self, "Open file", 'c:\\', "Image files (*.jpg *.png)")
+        self.files_recieved.emit(file_name[0])
+        self.swap.emit(View.LOAD)
 
     def dragEnterEvent(self, e: QDragMoveEvent):
         if e.mimeData().hasUrls():
@@ -65,19 +65,19 @@ class UploadWidget(QWidget, ViewWidget):
 
             # Parse all the files and make sure there are only images.
             links = []
-            onlyImgs = True
+            only_imgs = True
 
             for r in event.mimeData().urls():
                 # Check if the suffix of the files are actual images
                 file = QFileInfo(r.url())
                 if file.suffix() not in ACCEPTABLE_FILES:
-                    onlyImgs = False
+                    only_imgs = False
                     break
                 # Add file path if link was usable
                 links.append(file.absoluteFilePath())
 
-            if onlyImgs:
-                self.filesRecieved.emit(links)
-                self.swap.emit(View.Load)
+            if only_imgs:
+                self.files_recieved.emit(links)
+                self.swap.emit(View.LOAD)
         else:
             event.ignore()

@@ -1,14 +1,13 @@
-import enum
+from enum import Enum, auto
 from PyQt6.QtCore import pyqtSignal
 
-class View(enum.Enum):
-    Upload   = ...
-    Load     = ...
-    Result   = ...
-    EditCrop = ...
-    EditText = ...
-    Merge    = ...
+class View(Enum):
+    UPLOAD   = auto()
+    LOAD     = auto()
+    RESULT   = auto()
+    EDIT_CROP = auto()
+    EDIT_TEXT = auto()
+    MERGE    = auto()
 
-# Makes any object that inherits this to implement the swap signal.
 class ViewWidget:
     swap = pyqtSignal(View)
