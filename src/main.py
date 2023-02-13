@@ -1,79 +1,22 @@
 import sys
 import qdarktheme
 
-from views import View, ViewWidget
+from views import View
 
-# import imaging
+from imaging import LoadWidget
+from display import UploadWidget
 
 from PyQt6.QtCore import (
-    Qt, pyqtSignal
+    Qt, pyqtSlot
 )
 from PyQt6.QtWidgets import (
-    QApplication, QWidget, QMainWindow, QLabel, QPushButton, 
-    QFileDialog, QGridLayout, QVBoxLayout, QStackedLayout, 
-    QStyle
+    QApplication, QWidget, QMainWindow, QStackedLayout
 )
 from PyQt6.QtGui import (
-    QGuiApplication, QDragMoveEvent
+    QGuiApplication
 )
 
-class UploadWidget(QWidget, ViewWidget):
-    dropped = pyqtSignal(list)
-
-    def __init__(self, parent=None):
-        super(QWidget, self).__init__(parent)
-
-        self.setAcceptDrops(True)
-        self.setAutoFillBackground(True)
-
-        self._button = QPushButton()
-        self._button.setText("Add Files")
-        self._button.clicked.connect(self._getFile)
-
-        self._uploadIcon = QLabel()
-        fileDiag = self.style().standardIcon( QStyle.StandardPixmap.SP_FileDialogStart )
-        self._uploadIcon.setPixmap( fileDiag.pixmap(50, 50) )
-        self._uploadIcon.setGeometry(50, 50, 50, 50)
-
-        buttonLayout = QVBoxLayout()
-        buttonLayout.addWidget(self._button)
-
-        gridLayout = QGridLayout()
-        gridLayout.addWidget(self._uploadIcon, 0, 0, Qt.AlignmentFlag.AlignHCenter)
-        gridLayout.addLayout(buttonLayout, 1, 0)
-        self.setLayout(gridLayout)
-
-    def _getFile(self):
-        fileName = QFileDialog.getOpenFileNames(self, "Open file", 'c:\\', "Image files (*.jpg *.png)")
-        self.dropped.emit(fileName[0])
-
-    def dragEnterEvent(self, e: QDragMoveEvent):
-        if e.mimeData().hasUrls():
-            e.accept()
-        else:
-            e.ignore()
-
-    def dragMoveEvent(self, e: QDragMoveEvent):
-        if e.mimeData().hasUrls():
-            e.setDropAction(Qt.DropAction.CopyAction)
-            e.accept()
-        else:
-            e.ignore()
-
-    def dropEvent(self, event: QDragMoveEvent):
-        if event.mimeData().hasUrls():
-            event.setDropAction(Qt.DropAction.CopyAction)
-            event.accept()
-            links = []
-            for r in event.mimeData().urls():
-                links.append(r)
-            self.dropped.emit(links)
-            self.swap.emit(View.Upload)
-        else:
-            event.ignore()
-
 class MainWindow(QMainWindow):
-
     def __init__(self):
         super().__init__()
 
@@ -81,26 +24,31 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(400, 300)
         self.setMaximumSize(800, 600)
 
-        self.input = UploadWidget(parent = self)
-        self.input.dropped.connect(self.printFiles)
-        self.input.swap.connect(self._setView)
+        # All scenes being initialized
+        self.uploadWidget   = UploadWidget(parent = self)
+        self.loadWidget     = LoadWidget(parent = self)
 
+        self.uploadWidget.swap.connect(self._setView)
+        self.loadWidget.swap.connect(self._setView)
+
+        # self.uploadWidget.filesRecieved.connect(self._startProcessing)
+        
         self.stackLayout = QStackedLayout()
-        self.stackLayout.addWidget(self.input)
+        self.stackLayout.addWidget(self.uploadWidget)
+        self.stackLayout.addWidget(self.loadWidget)
 
         container = QWidget()
         container.setLayout(self.stackLayout)
 
         self.setCentralWidget(container)
 
-    def printFiles(self, list = []):
-        print("Dropped in: ", list)
-
-    def _setView(self, v: View):
+    @pyqtSlot(View)
+    def _setView(self, v):
         match v:
             case View.Upload:
-                self.stackLayout.setCurrentWidget(self.input)
-                print("testing")
+                self.stackLayout.setCurrentWidget(self.uploadWidget)
+            case View.Load:
+                self.stackLayout.setCurrentWidget(self.loadWidget)
         
 def main():
     app = QApplication(sys.argv)
