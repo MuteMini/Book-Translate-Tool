@@ -75,7 +75,6 @@ class LoadWidget(QWidget, ViewWidget):
     @pyqtSlot(list)
     def recieve_files(self, img_paths):
         worker = Worker(self._increment_progress, img_paths)
-
         self.start_thread(worker)
 
     def start_thread(self, worker: Worker):
@@ -93,6 +92,7 @@ class LoadWidget(QWidget, ViewWidget):
     def finish_thread(self):
         print("Asynchronous processing is complete")
         self.thread_pool.waitForDone()
+        self.swap.emit(View.RESULT)
 
     def _increment_progress(self, worker_object, img_paths):
         print(img_paths)
