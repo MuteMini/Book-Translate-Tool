@@ -1,99 +1,110 @@
 import cv2
-import colorsys
 import imutils
+import colorsys
 import numpy as np
-from dataclasses import dataclass
+
 import pytesseract
 from PIL import Image
+
 import os
 
-MULT = 5
 THETA_THRESH = np.pi/45
 RHO_THRESH = 25
 
 class DocumentLines(object):
 
-    @dataclass
-    class Line:
-        rho: int = None
-        t: float = None
+    class Line(object):
+        def __init__(self, rho=None, t=None):
+            self.rho = rho
+            self.t = t
+            self.sin = self.cos = None
+            if t is not None:
+                self.cos = np.cos(t)
+                self.sin = np.sin(t)
 
         def dot_product(self, other) -> float:
-            return np.arccos(np.clip(np.dot([np.cos(self.t), np.sin(self.t)], [np.cos(other.t), np.sin(other.t)]), -1, 1))
+            return np.arccos(np.clip(self.cos*other.cos + self.sin*other.sin, -1, 1 ))
+        
+        def get_intersection(self, other) -> tuple[int, int]:
+            d = self.cos*other.sin - other.cos*self.sin
+            if d != 0:
+                x = (self.rho*other.sin - other.rho*self.sin)/d
+                y = (self.cos*other.rho - other.cos*self.rho)/d
+                return x, y
+            return None
+
 
         def get_list(self) -> list:
             return [self.rho, self.t]
-            
-    # Even index (0, 2) represent min rho line on that "range" of lines. Odd represents max rho.
+        
+        def get_trig(self) -> list:
+            return [self.cos, self.sin]
+        
+    # Even indices represents min rho line near similar theta lines. Odd represents max rho.
     def __init__(self):
-        self.lines = [DocumentLines.Line() for _ in range(4)]
-    
+        self.lines = [None for _ in range(4)]
+
     # Only stores the minimum and maximum distance pairs of lines.
     def add_line(self, rho, theta):
         line = DocumentLines.Line(rho, theta)
-        # Checks first pair to see if line fits there, then stores on the second pair.
+
         for id in range(0, len(self.lines), 2):
-            if self.lines[id].t is None:
+            if self.lines[id] is None:
                 self.lines[id] = line
                 break
-            elif self.lines[id].dot_product(line) <= 5*THETA_THRESH: #need to edit this value around
-                if self.lines[id+1].rho is None:
-                    self.lines[id+1] = line
-                    if self.lines[id].rho > self.lines[id+1].rho:
+            elif self.lines[id].dot_product(line) <= 5*THETA_THRESH:
+                if self.lines[id + 1] is None:
+                    self.lines[id + 1] = line
+                    if self.lines[id].rho > self.lines[id + 1].rho:
                         self.lines[id], self.lines[id+1] = self.lines[id+1], self.lines[id]
-                elif min(self.lines[id].rho, rho) == rho:
+                elif self.lines[id].rho > rho:
                     self.lines[id] = line
-                elif max(self.lines[id+1].rho, rho) == rho:
-                    self.lines[id+1] = line
+                elif rho > self.lines[id + 1].rho:
+                    self.lines[id + 1] = line
                 break
-
+    
     def document_found(self) -> bool:
-        return self.lines[1].rho != None and self.lines[3].rho != None
+        return self.lines[1] is not None and self.lines[3] is not None 
     
     def get_lines(self) -> list:
-        list = []
-        for id in range(len(self.lines)):
-            list.append( self.lines[id].get_list() )
-        return list
+        return [line.get_list() for line in self.lines if isinstance(line, DocumentLines.Line)]
+    
+    def get_trigs(self) -> list:
+        return [line.get_trig() for line in self.lines if isinstance(line, DocumentLines.Line)]
 
     # Temporary testing function
     def draw_lines(self, img: cv2.Mat):
-        for n, line in enumerate(self.get_lines()):
-            rh, t = line[0], line[1]
-            a, b = np.cos(t), np.sin(t)
-            x0 = a*rh
-            y0 = b*rh
-            x1 = int(x0 + 1000*(-b))
-            y1 = int(y0 + 1000*(a))
-            x2 = int(x0 - 1000*(-b))
-            y2 = int(y0 - 1000*(a))
-            r, g, b = colorsys.hsv_to_rgb(n*0.05, 1, 0.8)
-            n += 1
-            cv2.line(img, (x1,y1), (x2,y2), (b*225,g*225,r*225), 2)
+        for n, line in enumerate(self.lines):
+            if isinstance(line, DocumentLines.Line):
+                x0 = line.cos*line.rho
+                y0 = line.sin*line.rho
+                x1 = int(x0 + 1000*(-line.sin))
+                y1 = int(y0 + 1000*(line.cos))
+                x2 = int(x0 - 1000*(-line.sin))
+                y2 = int(y0 - 1000*(line.cos))
+                r, g, b = colorsys.hsv_to_rgb(n*0.1, 1, 0.8)
+                cv2.line(img, (x1,y1), (x2,y2), (b*225,g*225,r*225), 2)
 
-    def get_intersections(self) -> np.ndarray:
-        list = np.array(self.get_lines())
-        x_val = np.cos(list[:,1])
-        y_val = np.sin(list[:,1])
+    # As a document, we should have four corners of the document to manipulate.
+    def get_corners(self) -> np.ndarray:
+        if not self.document_found():
+            return None
 
         points = []
 
         for id in range(len(self.lines)):
             l1 = id//2
             l2 = id%2 + 2
-            d = x_val[l1]*y_val[l2] - x_val[l2]*y_val[l1]
-            if d != 0:
-                x_p = (list[l1, 0]*y_val[l2] - list[l2, 0]*y_val[l1])/d
-                y_p = (x_val[l1]*list[l2, 0] - x_val[l2]*list[l1, 0])/d 
-                points.append((int(x_p), int(y_p)))
-
-        if len(points) > 0:
-            return np.array(points)
-        return None
-
+            p = self.lines[l1].get_intersection(self.lines[l2])
+            if p is None:
+                return None
+            points.append(p)
+        
+        return np.array(points)
+    
     def __str__(self):
         out = ""
-        for id in range(len(self.lines)-1): 
+        for id in range(len(self.lines)-1):
             out += f"{self.lines[id].get_list()}, "
         return out + f"{self.lines[-1].get_list()}"
 
@@ -138,71 +149,72 @@ class pyImageSearch:
         
         matrix = cv2.getPerspectiveTransform(rect, dst)
         return cv2.warpPerspective(image, matrix, (max_width, max_height))
-
-# path = 'hardertest.jpg'
-path = 'hardtest.jpg'
-# path = 'test.jpg'
-# path = 'test2.jpg'
-org_img = cv2.imread(path)
+    
+path = ['test.jpg', 'test2.jpg', 'hardtest.jpg']
+org_img = cv2.imread(path[2])
 
 ratio = org_img.shape[0] / 600.0
 img = imutils.convenience.resize(org_img.copy(), height = 600)
 cv2.imshow("Original Image", img)
 cv2.waitKey(0)
 
-# Close Operation, to merge colors
+# Close Morph Operation
 kernel = np.ones((5, 5), np.uint8)
-img: cv2.Mat = cv2.morphologyEx(img, cv2.MORPH_CLOSE, kernel, iterations = 5)
+close_morph = cv2.morphologyEx(img.copy(), cv2.MORPH_CLOSE, kernel, iterations = 5)
 
-# Unsharpen Masking
-frame = cv2.GaussianBlur(img.copy(), (7,7), 3)
-cv2.addWeighted(img, 2, frame, -1, 0, img)
+# Unsharp Masking
+frame = cv2.GaussianBlur(close_morph.copy(), (7,7), 3)
+cv2.addWeighted(close_morph, 2, frame, -1, 0, close_morph)
 
 # Canny Edge Detection, preps image for Hough Line Transforming
-edges = cv2.cvtColor(img.copy(), cv2.COLOR_BGR2GRAY)
+edges = cv2.cvtColor(close_morph.copy(), cv2.COLOR_BGR2GRAY)
 edges = cv2.GaussianBlur(edges, (11,11), 0)
 edges = cv2.Canny(edges, 0, 100, apertureSize=3)
 cv2.imshow("Canny Image", edges)
 cv2.waitKey(0)
 
 # Processing HoughLines into the four most likely document items
-candid_lines = 0
 strong_lines = DocumentLines()
 lines = cv2.HoughLines(edges, 1, np.pi/180, 60)
 if lines is not None:
-    lines = lines[:,0].tolist()
-    lines = [x if x[0] >= 0 else [x[0]*-1.0, x[1]-np.pi] for x in lines]
+    lines = lines[:,0].toList()
+    lines = [x if x[0] >= 0 else [-x[0], x[1]-np.pi] for x in lines]
 
     candid_lines = np.array([lines[0]])
     strong_lines.add_line(lines[0][0], lines[0][1])
 
     for line in lines[1:]:
         rho, theta = line[0], line[1]
+
         closeness_rho = np.isclose(rho, candid_lines[:,0], atol=RHO_THRESH)
         closeness_theta = np.isclose(theta, candid_lines[:,1], atol=THETA_THRESH)
 
         isclose = np.all([closeness_rho, closeness_theta], 0)
 
         if not any(isclose):
-            strong_lines.add_line(rho, theta)
             candid_lines = np.concatenate((candid_lines, [line]))
+            strong_lines.add_line(rho, theta)
 
         if strong_lines.document_found():
             break
 
-print(strong_lines)
-
 if strong_lines.document_found():
-    strong_lines.draw_lines(img)
-    for point in strong_lines.get_intersections():
-        cv2.circle(img, point, 4, (255,255,0), 2)
+    sample_img = img.copy()
+    strong_lines.draw_lines(sample_img)
+    for point in strong_lines.get_corners():
+        cv2.circle(sample_img, point, 4, (225,225,0), 1)
 
-    cutout = pyImageSearch.four_point_transform(org_img, strong_lines.get_intersections() * ratio)
-    dir = os.getcwd() + "/final.jpg"
-    cv2.imwrite(dir, cutout)
+    cutout = pyImageSearch.four_point_transform(img, strong_lines.get_intersections())
+    detail = pytesseract.image_to_data(Image.fromarray(cutout), output_type=pytesseract.Output.DICT, lang='eng+kor', config='--psm 11')
 
-    letters = pytesseract.image_to_string(Image.fromarray(cutout), lang='eng+kor', config='--psm 11')
-    print(letters)
+    for seq in range(len(detail['text'])):
+        if int(detail['conf'][seq]) > 30:
+            x, y, w, h = detail['left'][seq], detail['top'][seq], detail['width'][seq], detail['height'][seq]
+            cv2.rectangle(sample_img, (x, y), (x + w, y + h), (0,255,0), 2)
 
-cv2.imshow("Final Document", img)
-cv2.waitKey(0)
+    # final = pyImageSearch.four_point_transform(org_img, strong_lines.get_intersections() * ratio)
+    # dir = os.getcwd() + "/final.jpg"
+    # cv2.imwrite(dir, final)
+
+    cv2.imshow("Final Document", sample_img)
+    cv2.waitKey(0)
