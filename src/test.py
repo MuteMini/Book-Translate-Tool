@@ -2,9 +2,7 @@ import cv2
 import imutils
 import colorsys
 import numpy as np
-
-import pytesseract
-from PIL import Image
+import keras_ocr
 
 import os
 
@@ -23,23 +21,22 @@ class DocumentLines(object):
                 self.sin = np.sin(t)
 
         def dot_product(self, other) -> float:
-            return np.arccos(np.clip(self.cos*other.cos + self.sin*other.sin, -1, 1 ))
-        
+            return np.arccos(np.clip(self.cos*other.cos + self.sin*other.sin, -1, 1))
+
         def get_intersection(self, other) -> tuple[int, int]:
             d = self.cos*other.sin - other.cos*self.sin
             if d != 0:
                 x = (self.rho*other.sin - other.rho*self.sin)/d
                 y = (self.cos*other.rho - other.cos*self.rho)/d
-                return x, y
+                return (int(x), int(y))
             return None
-
 
         def get_list(self) -> list:
             return [self.rho, self.t]
-        
+
         def get_trig(self) -> list:
             return [self.cos, self.sin]
-        
+
     # Even indices represents min rho line near similar theta lines. Odd represents max rho.
     def __init__(self):
         self.lines = [None for _ in range(4)]
@@ -56,19 +53,20 @@ class DocumentLines(object):
                 if self.lines[id + 1] is None:
                     self.lines[id + 1] = line
                     if self.lines[id].rho > self.lines[id + 1].rho:
-                        self.lines[id], self.lines[id+1] = self.lines[id+1], self.lines[id]
+                        self.lines[id], self.lines[id +
+                                                   1] = self.lines[id+1], self.lines[id]
                 elif self.lines[id].rho > rho:
                     self.lines[id] = line
                 elif rho > self.lines[id + 1].rho:
                     self.lines[id + 1] = line
                 break
-    
+
     def document_found(self) -> bool:
-        return self.lines[1] is not None and self.lines[3] is not None 
-    
+        return self.lines[1] is not None and self.lines[3] is not None
+
     def get_lines(self) -> list:
         return [line.get_list() for line in self.lines if isinstance(line, DocumentLines.Line)]
-    
+
     def get_trigs(self) -> list:
         return [line.get_trig() for line in self.lines if isinstance(line, DocumentLines.Line)]
 
@@ -82,8 +80,8 @@ class DocumentLines(object):
                 y1 = int(y0 + 1000*(line.cos))
                 x2 = int(x0 - 1000*(-line.sin))
                 y2 = int(y0 - 1000*(line.cos))
-                r, g, b = colorsys.hsv_to_rgb(n*0.1, 1, 0.8)
-                cv2.line(img, (x1,y1), (x2,y2), (b*225,g*225,r*225), 2)
+                r, g, b = colorsys.hsv_to_rgb(n*0.1, 0.8, 1)
+                cv2.line(img, (x1, y1), (x2, y2), (b*225, g*225, r*225), 2)
 
     # As a document, we should have four corners of the document to manipulate.
     def get_corners(self) -> np.ndarray:
@@ -94,14 +92,14 @@ class DocumentLines(object):
 
         for id in range(len(self.lines)):
             l1 = id//2
-            l2 = id%2 + 2
+            l2 = id % 2 + 2
             p = self.lines[l1].get_intersection(self.lines[l2])
             if p is None:
                 return None
             points.append(p)
-        
+
         return np.array(points)
-    
+
     def __str__(self):
         out = ""
         for id in range(len(self.lines)-1):
@@ -113,9 +111,9 @@ class DocumentLines(object):
 class pyImageSearch:
     # Sorts points into tl, tr, br, bl
     def order_point(pts) -> np.ndarray:
-        rect = np.zeros((4,2), dtype="float32")
+        rect = np.zeros((4, 2), dtype="float32")
 
-        # tl, br has max sum of points 
+        # tl, br has max sum of points
         s = np.sum(pts, axis=1)
         rect[0] = pts[np.argmin(s)]
         rect[2] = pts[np.argmax(s)]
@@ -124,7 +122,7 @@ class pyImageSearch:
         d = np.diff(pts, axis=1)
         rect[1] = pts[np.argmin(d)]
         rect[3] = pts[np.argmax(d)]
-        
+
         return rect
 
     # Performs the point transform on the image, returning the new image.
@@ -132,52 +130,47 @@ class pyImageSearch:
         rect = pyImageSearch.order_point(pts)
         tl, tr, br, bl = rect
 
-        width_a = np.sqrt( ((br[0] - bl[0])**2) + ((br[1] - bl[1])**2) )
-        width_b = np.sqrt( ((tr[0] - tl[0])**2) + ((tr[1] - tl[1])**2) )
+        width_a = np.sqrt(((br[0] - bl[0])**2) + ((br[1] - bl[1])**2))
+        width_b = np.sqrt(((tr[0] - tl[0])**2) + ((tr[1] - tl[1])**2))
         max_width = max(int(width_a), int(width_b))
 
-        height_a = np.sqrt( ((tr[0] - br[0])**2) + ((tr[1] - br[1])**2) )
-        height_b = np.sqrt( ((tl[0] - bl[0])**2) + ((tl[1] - bl[1])**2) )
+        height_a = np.sqrt(((tr[0] - br[0])**2) + ((tr[1] - br[1])**2))
+        height_b = np.sqrt(((tl[0] - bl[0])**2) + ((tl[1] - bl[1])**2))
         max_height = max(int(height_a), int(height_b))
         max_height = max(int(max_width*1.294), max_height)
 
-        dst = np.array([ 
+        dst = np.array([
             [0, 0],
             [max_width - 1, 0],
             [max_width - 1, max_height - 1],
             [0, max_height - 1]], dtype="float32")
-        
+
         matrix = cv2.getPerspectiveTransform(rect, dst)
         return cv2.warpPerspective(image, matrix, (max_width, max_height))
-    
+
+def midpoint(ax, ay, bx, by):
+    return (int((ax + bx)/2), int((ay + by)/2))
+
 path = ['test.jpg', 'test2.jpg', 'hardtest.jpg']
-org_img = cv2.imread(path[2])
+org_img = cv2.imread('imaging/'+path[0])
 
 ratio = org_img.shape[0] / 600.0
-img = imutils.convenience.resize(org_img.copy(), height = 600)
-cv2.imshow("Original Image", img)
-cv2.waitKey(0)
+img = imutils.convenience.resize(org_img.copy(), height=600)
 
-# Close Morph Operation
+# Processes Image for Document Detection
 kernel = np.ones((5, 5), np.uint8)
-close_morph = cv2.morphologyEx(img.copy(), cv2.MORPH_CLOSE, kernel, iterations = 5)
-
-# Unsharp Masking
-frame = cv2.GaussianBlur(close_morph.copy(), (7,7), 3)
+close_morph = cv2.morphologyEx(img.copy(), cv2.MORPH_CLOSE, kernel, iterations=5)
+frame = cv2.GaussianBlur(close_morph.copy(), (7, 7), 3)
 cv2.addWeighted(close_morph, 2, frame, -1, 0, close_morph)
-
-# Canny Edge Detection, preps image for Hough Line Transforming
 edges = cv2.cvtColor(close_morph.copy(), cv2.COLOR_BGR2GRAY)
-edges = cv2.GaussianBlur(edges, (11,11), 0)
+edges = cv2.GaussianBlur(edges, (11, 11), 0)
 edges = cv2.Canny(edges, 0, 100, apertureSize=3)
-cv2.imshow("Canny Image", edges)
-cv2.waitKey(0)
 
 # Processing HoughLines into the four most likely document items
 strong_lines = DocumentLines()
 lines = cv2.HoughLines(edges, 1, np.pi/180, 60)
 if lines is not None:
-    lines = lines[:,0].toList()
+    lines = lines[:, 0].tolist()
     lines = [x if x[0] >= 0 else [-x[0], x[1]-np.pi] for x in lines]
 
     candid_lines = np.array([lines[0]])
@@ -186,8 +179,9 @@ if lines is not None:
     for line in lines[1:]:
         rho, theta = line[0], line[1]
 
-        closeness_rho = np.isclose(rho, candid_lines[:,0], atol=RHO_THRESH)
-        closeness_theta = np.isclose(theta, candid_lines[:,1], atol=THETA_THRESH)
+        closeness_rho = np.isclose(rho, candid_lines[:, 0], atol=RHO_THRESH)
+        closeness_theta = np.isclose(
+            theta, candid_lines[:, 1], atol=THETA_THRESH)
 
         isclose = np.all([closeness_rho, closeness_theta], 0)
 
@@ -198,23 +192,28 @@ if lines is not None:
         if strong_lines.document_found():
             break
 
+pipeline = keras_ocr.pipeline.Pipeline()
+
 if strong_lines.document_found():
-    sample_img = img.copy()
-    strong_lines.draw_lines(sample_img)
-    for point in strong_lines.get_corners():
-        cv2.circle(sample_img, point, 4, (225,225,0), 1)
+    # sample_img = img.copy()
+    # strong_lines.draw_lines(sample_img)
+    # for point in strong_lines.get_corners():
+    #     cv2.circle(sample_img, point, 0, (225, 225, 0), 10)
 
-    cutout = pyImageSearch.four_point_transform(img, strong_lines.get_intersections())
-    detail = pytesseract.image_to_data(Image.fromarray(cutout), output_type=pytesseract.Output.DICT, lang='eng+kor', config='--psm 11')
+    cutout = pyImageSearch.four_point_transform(org_img, strong_lines.get_corners()*ratio)
 
-    for seq in range(len(detail['text'])):
-        if int(detail['conf'][seq]) > 30:
-            x, y, w, h = detail['left'][seq], detail['top'][seq], detail['width'][seq], detail['height'][seq]
-            cv2.rectangle(sample_img, (x, y), (x + w, y + h), (0,255,0), 2)
+    prediction_data = pipeline.recognize([cutout])
+    mask = np.zeros(cutout.shape[:2], dtype='uint8')
 
-    # final = pyImageSearch.four_point_transform(org_img, strong_lines.get_intersections() * ratio)
-    # dir = os.getcwd() + "/final.jpg"
-    # cv2.imwrite(dir, final)
+    for box in prediction_data[0]:
+        x0, y0 = box[1][0]
+        x1, y1 = box[1][1]
+        x2, y2 = box[1][2]
+        x3, y3 = box[1][3]
 
-    cv2.imshow("Final Document", sample_img)
-    cv2.waitKey(0)
+        thickness = int(np.sqrt((x2 - x1)**2 + (y2 - y1)**2))
+
+        cv2.line(mask, midpoint(x1, y1, x2, y2), midpoint(x0, y0, x3, y3), 255, thickness)
+
+    inpainted = cv2.inpaint(cutout, mask, 7, cv2.INPAINT_NS)
+    cv2.imwrite(os.getcwd()+"/imaging/final.jpg", inpainted)
