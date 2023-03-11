@@ -1,16 +1,17 @@
+import os
+import colorsys
+
 import cv2
 import imutils
-import colorsys
 import numpy as np
-import keras_ocr
 
-import os
+import keras_ocr
 
 THETA_THRESH = np.pi/45
 RHO_THRESH = 25
+PIPELINE = keras_ocr.pipeline.Pipeline()
 
 class DocumentLines(object):
-
     class Line(object):
         def __init__(self, rho=None, t=None):
             self.rho = rho
@@ -38,7 +39,8 @@ class DocumentLines(object):
             return [self.cos, self.sin]
 
     # Even indices represents min rho line near similar theta lines. Odd represents max rho.
-    def __init__(self):
+    def __init__(self, shape):
+        self.width, self.height = shape
         self.lines = [None for _ in range(4)]
 
     # Only stores the minimum and maximum distance pairs of lines.
@@ -53,8 +55,7 @@ class DocumentLines(object):
                 if self.lines[id + 1] is None:
                     self.lines[id + 1] = line
                     if self.lines[id].rho > self.lines[id + 1].rho:
-                        self.lines[id], self.lines[id +
-                                                   1] = self.lines[id+1], self.lines[id]
+                        self.lines[id], self.lines[id + 1] = self.lines[id+1], self.lines[id]
                 elif self.lines[id].rho > rho:
                     self.lines[id] = line
                 elif rho > self.lines[id + 1].rho:
@@ -71,7 +72,7 @@ class DocumentLines(object):
         return [line.get_trig() for line in self.lines if isinstance(line, DocumentLines.Line)]
 
     # Temporary testing function
-    def draw_lines(self, img: cv2.Mat):
+    def draw_lines(self, img):
         for n, line in enumerate(self.lines):
             if isinstance(line, DocumentLines.Line):
                 x0 = line.cos*line.rho
@@ -85,16 +86,14 @@ class DocumentLines(object):
 
     # As a document, we should have four corners of the document to manipulate.
     def get_corners(self) -> np.ndarray:
-        if not self.document_found():
-            return None
-
         points = []
 
+        # Compares 0w/2, 0w/3, 1w/2, 1w/3
         for id in range(len(self.lines)):
-            l1 = id//2
-            l2 = id % 2 + 2
-            p = self.lines[l1].get_intersection(self.lines[l2])
+            p = self.lines[id//2].get_intersection(self.lines[id%2 + 2])
             if p is None:
+                return None
+            elif (0, 0) > p > (self.width, self.height):
                 return None
             points.append(p)
 
@@ -106,9 +105,12 @@ class DocumentLines(object):
             out += f"{self.lines[id].get_list()}, "
         return out + f"{self.lines[-1].get_list()}"
 
-# Below functions come from https://pyimagesearch.com/2014/08/25/4-point-opencv-getperspective-transform-example/
-# Performs four point transformation after the document corners are found
-class pyImageSearch:
+class DocUtils:
+    # Exception used to tell QtObjects that the document could not be found
+    class NoDocumentDetectedError(Exception):
+        pass
+
+    # Comes from https://pyimagesearch.com/2014/08/25/4-point-opencv-getperspective-transform-example
     # Sorts points into tl, tr, br, bl
     def order_point(pts) -> np.ndarray:
         rect = np.zeros((4, 2), dtype="float32")
@@ -125,9 +127,10 @@ class pyImageSearch:
 
         return rect
 
-    # Performs the point transform on the image, returning the new image.
-    def four_point_transform(image: cv2.Mat, pts) -> cv2.Mat:
-        rect = pyImageSearch.order_point(pts)
+    # Comes from https://pyimagesearch.com/2014/08/25/4-point-opencv-getperspective-transform-example
+    # Performs four point transformation after the document corners are found
+    def four_point_transform(img, pts) -> cv2.Mat:
+        rect = DocUtils.order_point(pts)
         tl, tr, br, bl = rect
 
         width_a = np.sqrt(((br[0] - bl[0])**2) + ((br[1] - bl[1])**2))
@@ -146,74 +149,74 @@ class pyImageSearch:
             [0, max_height - 1]], dtype="float32")
 
         matrix = cv2.getPerspectiveTransform(rect, dst)
-        return cv2.warpPerspective(image, matrix, (max_width, max_height))
+        return cv2.warpPerspective(img, matrix, (max_width, max_height))
 
-def midpoint(ax, ay, bx, by):
-    return (int((ax + bx)/2), int((ay + by)/2))
+    def midpoint(a, b):
+        return (int((a[0] + b[0])/2), int((a[1] + b[1])/2))
 
-path = ['test.jpg', 'test2.jpg', 'hardtest.jpg']
-org_img = cv2.imread('imaging/'+path[0])
+    # Returns the mask to inpaint on the cropped image.
+    def get_text_mask(img):
+        r = img.shape[0]/1200
+        pred_img = imutils.convenience.resize(img.copy(), height=1200)
+        prediction_data = PIPELINE.recognize([pred_img])
 
-ratio = org_img.shape[0] / 600.0
-img = imutils.convenience.resize(org_img.copy(), height=600)
+        mask = np.zeros(img.shape[:2], dtype='uint8')
+        for box in prediction_data[0]:
+            pos = [(box[1][i][0]*r, box[1][i][1]*r) for i in range(4)]
+            thickness = int(np.sqrt((pos[2][0] - pos[1][0])**2 + (pos[2][1] - pos[1][1])**2))
+            cv2.line(mask, DocUtils.midpoint(pos[1], pos[2]), DocUtils.midpoint(pos[0], pos[3]), 255, thickness)
+        return mask
 
-# Processes Image for Document Detection
-kernel = np.ones((5, 5), np.uint8)
-close_morph = cv2.morphologyEx(img.copy(), cv2.MORPH_CLOSE, kernel, iterations=5)
-frame = cv2.GaussianBlur(close_morph.copy(), (7, 7), 3)
-cv2.addWeighted(close_morph, 2, frame, -1, 0, close_morph)
-edges = cv2.cvtColor(close_morph.copy(), cv2.COLOR_BGR2GRAY)
-edges = cv2.GaussianBlur(edges, (11, 11), 0)
-edges = cv2.Canny(edges, 0, 100, apertureSize=3)
+    # Returns original opencv image and the corners of the detected document.
+    def get_document(path):
+        org_img = cv2.imread(path)
+        ratio = org_img.shape[0]/600.0
+        img = imutils.convenience.resize(org_img.copy(), height=600)
 
-# Processing HoughLines into the four most likely document items
-strong_lines = DocumentLines()
-lines = cv2.HoughLines(edges, 1, np.pi/180, 60)
-if lines is not None:
-    lines = lines[:, 0].tolist()
-    lines = [x if x[0] >= 0 else [-x[0], x[1]-np.pi] for x in lines]
+        # Processes Image for Document Detection
+        kernel = np.ones((5, 5), np.uint8)
+        edges = cv2.morphologyEx(img.copy(), cv2.MORPH_CLOSE, kernel, iterations=5)
+        frame = cv2.GaussianBlur(edges, (7, 7), 3)
+        edges = cv2.addWeighted(edges, 2, frame, -1, 0)
+        edges = cv2.cvtColor(edges, cv2.COLOR_BGR2GRAY)
+        edges = cv2.GaussianBlur(edges, (11, 11), 0)
+        edges = cv2.Canny(edges, 0, 100, apertureSize=3)
 
-    candid_lines = np.array([lines[0]])
-    strong_lines.add_line(lines[0][0], lines[0][1])
+        # Processing HoughLines into the four most likely document items
+        strong_lines = DocumentLines(img.shape[:2])
+        lines = cv2.HoughLines(edges, 1, np.pi/180, 60)
+        if lines is not None:
+            # Parses HoughLine space into a list of positive rho lines
+            lines = lines[:, 0].tolist()
+            lines = [x if x[0] >= 0 else [-x[0], x[1]-np.pi] for x in lines]
 
-    for line in lines[1:]:
-        rho, theta = line[0], line[1]
+            candid_lines = np.array([lines[0]])
+            strong_lines.add_line(lines[0][0], lines[0][1])
 
-        closeness_rho = np.isclose(rho, candid_lines[:, 0], atol=RHO_THRESH)
-        closeness_theta = np.isclose(
-            theta, candid_lines[:, 1], atol=THETA_THRESH)
+            for line in lines[1:]:
+                rho, theta = line[0], line[1]
 
-        isclose = np.all([closeness_rho, closeness_theta], 0)
+                closeness_rho = np.isclose(rho, candid_lines[:,0], atol=RHO_THRESH)
+                closeness_theta = np.isclose(theta, candid_lines[:,1], atol=THETA_THRESH)
 
-        if not any(isclose):
-            candid_lines = np.concatenate((candid_lines, [line]))
-            strong_lines.add_line(rho, theta)
+                isclose = np.all([closeness_rho, closeness_theta], 0)
 
-        if strong_lines.document_found():
-            break
+                if not any(isclose):
+                    candid_lines = np.concatenate((candid_lines, [line]))
+                    strong_lines.add_line(rho, theta)
+                    
+                    if strong_lines.document_found():
+                        break   
 
-pipeline = keras_ocr.pipeline.Pipeline()
+        if not strong_lines.document_found() or strong_lines.get_corners() is None:
+            raise DocUtils.NoDocumentDetectedError
 
-if strong_lines.document_found():
-    # sample_img = img.copy()
-    # strong_lines.draw_lines(sample_img)
-    # for point in strong_lines.get_corners():
-    #     cv2.circle(sample_img, point, 0, (225, 225, 0), 10)
+        return org_img, strong_lines.get_corners()*ratio
 
-    cutout = pyImageSearch.four_point_transform(org_img, strong_lines.get_corners()*ratio)
-
-    prediction_data = pipeline.recognize([cutout])
-    mask = np.zeros(cutout.shape[:2], dtype='uint8')
-
-    for box in prediction_data[0]:
-        x0, y0 = box[1][0]
-        x1, y1 = box[1][1]
-        x2, y2 = box[1][2]
-        x3, y3 = box[1][3]
-
-        thickness = int(np.sqrt((x2 - x1)**2 + (y2 - y1)**2))
-
-        cv2.line(mask, midpoint(x1, y1, x2, y2), midpoint(x0, y0, x3, y3), 255, thickness)
-
-    inpainted = cv2.inpaint(cutout, mask, 7, cv2.INPAINT_NS)
-    cv2.imwrite(os.getcwd()+"/imaging/final.jpg", inpainted)
+if __name__ == '__main__':
+    img, c = DocUtils.get_document('imaging/hardtest.jpg')
+    img = DocUtils.four_point_transform(img, c)
+    m = DocUtils.get_text_mask(img)
+    img = cv2.inpaint(img, m, 7, cv2.INPAINT_NS)
+    cv2.imwrite(os.getcwd()+"/imaging/final.jpg", img)
+    cv2.waitKey(0)
