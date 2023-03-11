@@ -1,23 +1,62 @@
 from views import View, ViewWidget
+from imaging import LoadWidget, WorkerResult
 
 from PyQt6.QtCore import (
     Qt, pyqtSignal, QFileInfo, QRect, QPoint, QSize
 )
 from PyQt6.QtWidgets import (
-    QWidget, QLabel, QPushButton, QMenu, QFileDialog, QStyle,
+    QWidget, QLabel, QPushButton, QMenu, QFileDialog, QStyle, QMainWindow,
     QScrollArea, QGroupBox,
-    QLayout, QLayoutItem, QGridLayout, QVBoxLayout, QHBoxLayout,
+    QLayout, QLayoutItem, QGridLayout, QVBoxLayout, QHBoxLayout, QStackedLayout
 )
 from PyQt6.QtGui import (
-    QDragMoveEvent, QAction,
+    QDragMoveEvent, QAction, 
     QColor, QPalette,
 )
 
 ACCEPTABLE_FILES = ['png', 'jpg', 'jpeg']
 
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("Book Text Remover")
+        self.setMinimumSize(400, 300)
+        self.setMaximumSize(800, 600)
+
+        # All scenes being initialized
+        self.upload_widget      = UploadWidget(self)
+        self.load_widget        = LoadWidget(self)
+        self.result_widget      = ResultWidget(self)
+
+        self.upload_widget.swap.connect(self._set_view)
+        self.load_widget.swap.connect(self._set_view)
+        self.result_widget.swap.connect(self._set_view)
+
+        self.upload_widget.files_ready.connect(self.load_widget.recieve_files)
+        self.load_widget.result_ready.connect(self.result_widget.recieve_result)
+        
+        self.stack_layout = QStackedLayout()
+        self.stack_layout.addWidget(self.upload_widget)
+        self.stack_layout.addWidget(self.load_widget)
+        self.stack_layout.addWidget(self.result_widget)
+
+        container = QWidget()
+        container.setLayout(self.stack_layout)
+
+        self.setCentralWidget(container)
+
+    def _set_view(self, v):
+        match v:
+            case View.UPLOAD:
+                self.stack_layout.setCurrentWidget(self.upload_widget)
+            case View.LOAD:
+                self.stack_layout.setCurrentWidget(self.load_widget)
+            case View.RESULT:
+                self.stack_layout.setCurrentWidget(self.result_widget)
 
 class UploadWidget(QWidget, ViewWidget):
-    files_recieved = pyqtSignal(list)
+    files_ready = pyqtSignal(list)
 
     def __init__(self, parent=None):
         super(QWidget, self).__init__(parent)
@@ -29,8 +68,7 @@ class UploadWidget(QWidget, ViewWidget):
         self._button.clicked.connect(self._get_file)
 
         self._upload_icon = QLabel()
-        file_dialog = self.style().standardIcon(
-            QStyle.StandardPixmap.SP_FileDialogStart)
+        file_dialog = self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogStart)
         self._upload_icon.setPixmap(file_dialog.pixmap(50, 50))
         self._upload_icon.setGeometry(50, 50, 50, 50)
 
@@ -38,15 +76,13 @@ class UploadWidget(QWidget, ViewWidget):
         button_layout.addWidget(self._button)
 
         grid_layout = QGridLayout()
-        grid_layout.addWidget(self._upload_icon, 0, 0,
-                              Qt.AlignmentFlag.AlignHCenter)
+        grid_layout.addWidget(self._upload_icon, 0, 0, Qt.AlignmentFlag.AlignHCenter)
         grid_layout.addLayout(button_layout, 1, 0)
         self.setLayout(grid_layout)
 
     def _get_file(self):
-        file_name = QFileDialog.getOpenFileNames(
-            self, "Open file", 'c:\\', "Image files (*.jpg *.png)")
-        self.files_recieved.emit(file_name[0])
+        file_name = QFileDialog.getOpenFileNames(self, "Open file", 'c:\\', "Image files (*.jpg *.png)")
+        self.files_ready.emit(file_name[0])
         self.swap.emit(View.LOAD)
 
     def dragEnterEvent(self, e: QDragMoveEvent):
@@ -70,18 +106,18 @@ class UploadWidget(QWidget, ViewWidget):
             # Parse all the files and make sure there are only images.
             links = []
             for r in e.mimeData().urls():
-                file = QFileInfo(r.url())
+                file = QFileInfo(r.toLocalFile())
                 if file.suffix() not in ACCEPTABLE_FILES:
                     return
                 links.append(file.absoluteFilePath())
 
-            self.files_recieved.emit(links)
+            self.files_ready.emit(links)
             self.swap.emit(View.LOAD)
         else:
             e.ignore()
 
 # This layout comes from https://doc.qt.io/archives/qt-4.8/qt-layouts-flowlayout-example.html
-# The python version of this layout comes from https://stackoverflow.com/questions/41621354/pyqt-wrap-around-layout-of-widgets-inside-a-qscrollarea
+# The python version comes from https://stackoverflow.com/questions/41621354/pyqt-wrap-around-layout-of-widgets-inside-a-qscrollarea
 # Allows for horizontal layout of pages until it needs to wrap over vertically.
 class PagesLayout(QLayout):
     def __init__(self, parent=None, margin=10, hspacing=5, vspacing=5):
@@ -165,7 +201,6 @@ class PagesLayout(QLayout):
             line_height = max(line_height, item.sizeHint().height())
         return y + line_height - effective.y()
 
-
 class PagesWidget(QWidget):
     clicked = pyqtSignal()
 
@@ -187,7 +222,6 @@ class PagesWidget(QWidget):
     def contextMenuEvent(self, e):
         self.menu.exec(e.globalPos())
 
-
 class ResultWidget(QWidget, ViewWidget):
 
     def __init__(self, parent=None):
@@ -197,14 +231,6 @@ class ResultWidget(QWidget, ViewWidget):
         # self._sel_page = 
 
         pages_layout = PagesLayout()
-        pages_layout.addWidget(PagesWidget())
-        pages_layout.addWidget(PagesWidget())
-        pages_layout.addWidget(PagesWidget())
-        pages_layout.addWidget(PagesWidget())
-        pages_layout.addWidget(PagesWidget())
-        pages_layout.addWidget(PagesWidget())
-        pages_layout.addWidget(PagesWidget())
-        pages_layout.addWidget(PagesWidget())
 
         group = QGroupBox("Processed Pages")
         group.setLayout(pages_layout)
@@ -220,3 +246,7 @@ class ResultWidget(QWidget, ViewWidget):
         main_layout.addWidget(scroll_widget, 2)
 
         self.setLayout(main_layout)
+
+    def recieve_result(self, result: WorkerResult):
+        pass
+        
