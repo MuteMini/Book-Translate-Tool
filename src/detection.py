@@ -5,11 +5,10 @@ import cv2
 import imutils
 import numpy as np
 
-import keras_ocr
+import keras_ocr.pipeline
 
 THETA_THRESH = np.pi/45
 RHO_THRESH = 25
-PIPELINE = keras_ocr.pipeline.Pipeline()
 
 class DocumentLines(object):
     class Line(object):
@@ -129,7 +128,7 @@ class DocUtils:
 
     # Comes from https://pyimagesearch.com/2014/08/25/4-point-opencv-getperspective-transform-example
     # Performs four point transformation after the document corners are found
-    def four_point_transform(img, pts) -> cv2.Mat:
+    def crop_document(img, pts) -> cv2.Mat:
         rect = DocUtils.order_point(pts)
         tl, tr, br, bl = rect
 
@@ -153,19 +152,6 @@ class DocUtils:
 
     def midpoint(a, b):
         return (int((a[0] + b[0])/2), int((a[1] + b[1])/2))
-
-    # Returns the mask to inpaint on the cropped image.
-    def get_text_mask(img):
-        r = img.shape[0]/1200
-        pred_img = imutils.convenience.resize(img.copy(), height=1200)
-        prediction_data = PIPELINE.recognize([pred_img])
-
-        mask = np.zeros(img.shape[:2], dtype='uint8')
-        for box in prediction_data[0]:
-            pos = [(box[1][i][0]*r, box[1][i][1]*r) for i in range(4)]
-            thickness = int(np.sqrt((pos[2][0] - pos[1][0])**2 + (pos[2][1] - pos[1][1])**2))
-            cv2.line(mask, DocUtils.midpoint(pos[1], pos[2]), DocUtils.midpoint(pos[0], pos[3]), 255, thickness)
-        return mask
 
     # Returns original opencv image and the corners of the detected document.
     def get_document(path):
@@ -213,10 +199,19 @@ class DocUtils:
 
         return org_img, strong_lines.get_corners()*ratio
 
-if __name__ == '__main__':
-    img, c = DocUtils.get_document('imaging/hardtest.jpg')
-    img = DocUtils.four_point_transform(img, c)
-    m = DocUtils.get_text_mask(img)
-    img = cv2.inpaint(img, m, 7, cv2.INPAINT_NS)
-    cv2.imwrite(os.getcwd()+"/imaging/final.jpg", img)
-    cv2.waitKey(0)
+    # Returns the mask to inpaint on the cropped image.
+    def get_text_mask(img, pipeline: keras_ocr.pipeline.Pipeline):
+        r = img.shape[0]/1200
+        pred_img = imutils.convenience.resize(img.copy(), height=1200)
+        prediction_data = pipeline.recognize([pred_img])
+
+        mask = np.zeros(img.shape[:2], dtype='uint8')
+        for box in prediction_data[0]:
+            pos = [(box[1][i][0]*r, box[1][i][1]*r) for i in range(4)]
+            thickness = int(np.sqrt((pos[2][0] - pos[1][0])**2 + (pos[2][1] - pos[1][1])**2))
+            cv2.line(mask, DocUtils.midpoint(pos[1], pos[2]), DocUtils.midpoint(pos[0], pos[3]), 255, thickness)
+        return mask
+
+    def get_resized_final(img, mask):
+        resized = cv2.inpaint(img, mask, 7, cv2.INPAINT_NS)
+        return imutils.convenience.resize(resized, height=600)
