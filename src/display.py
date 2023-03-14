@@ -1,23 +1,71 @@
 from views import View, ViewWidget
+from imaging import LoadWidget, ImageModel
 
 from PyQt6.QtCore import (
     Qt, pyqtSignal, QFileInfo, QRect, QPoint, QSize
 )
 from PyQt6.QtWidgets import (
-    QWidget, QLabel, QPushButton, QMenu, QFileDialog, QStyle,
-    QScrollArea, QGroupBox,
-    QLayout, QLayoutItem, QGridLayout, QVBoxLayout, QHBoxLayout,
+    QWidget, QLabel, QPushButton, QMenu, QFileDialog, QStyle, QMainWindow,
+    QScrollArea, QGroupBox, 
+    QLayout, QLayoutItem, QGridLayout, QVBoxLayout, QHBoxLayout, QStackedLayout
 )
 from PyQt6.QtGui import (
-    QDragMoveEvent, QAction,
-    QColor, QPalette,
+    QDragMoveEvent, QAction, QImage, QPixmap
 )
 
 ACCEPTABLE_FILES = ['png', 'jpg', 'jpeg']
 
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("Book Text Remover")
+        self.setMinimumSize(400, 300)
+        self.setMaximumSize(800, 600)
+
+        # All scenes being initialized
+        self.upload_widget      = UploadWidget()
+        self.load_widget        = LoadWidget()
+        self.result_widget      = ResultWidget()
+        self.crop_widget        = EditCropWidget()
+        self.mask_widget        = EditMaskWidget()
+
+        self.upload_widget.swap.connect(self._set_view)
+        self.load_widget.swap.connect(self._set_view)
+        self.result_widget.swap.connect(self._set_view)
+        self.crop_widget.swap.connect(self._set_view)
+        self.mask_widget.swap.connect(self._set_view)
+
+        self.upload_widget.files_ready.connect(self.load_widget.recieve_files)
+        self.load_widget.result_ready.connect(self.result_widget.recieve_result)
+        
+        self.stack_layout = QStackedLayout()
+        self.stack_layout.addWidget(self.upload_widget)
+        self.stack_layout.addWidget(self.load_widget)
+        self.stack_layout.addWidget(self.result_widget)
+        self.stack_layout.addWidget(self.crop_widget)
+        self.stack_layout.addWidget(self.mask_widget)
+
+        container = QWidget()
+        container.setLayout(self.stack_layout)
+
+        self.setCentralWidget(container)
+
+    def _set_view(self, v):
+        match v:
+            case View.UPLOAD:
+                self.stack_layout.setCurrentWidget(self.upload_widget)
+            case View.LOAD:
+                self.stack_layout.setCurrentWidget(self.load_widget)
+            case View.RESULT:
+                self.stack_layout.setCurrentWidget(self.result_widget)
+            case View.EDIT_CROP:
+                self.stack_layout.setCurrentWidget(self.crop_widget)
+            case View.EDIT_MASK:
+                self.stack_layout.setCurrentWidget(self.mask_widget)
 
 class UploadWidget(QWidget, ViewWidget):
-    files_recieved = pyqtSignal(list)
+    files_ready = pyqtSignal(list)
 
     def __init__(self, parent=None):
         super(QWidget, self).__init__(parent)
@@ -29,24 +77,22 @@ class UploadWidget(QWidget, ViewWidget):
         self._button.clicked.connect(self._get_file)
 
         self._upload_icon = QLabel()
-        file_dialog = self.style().standardIcon(
-            QStyle.StandardPixmap.SP_FileDialogStart)
+        file_dialog = self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogStart)
         self._upload_icon.setPixmap(file_dialog.pixmap(50, 50))
         self._upload_icon.setGeometry(50, 50, 50, 50)
 
         button_layout = QVBoxLayout()
         button_layout.addWidget(self._button)
 
-        grid_layout = QGridLayout()
-        grid_layout.addWidget(self._upload_icon, 0, 0,
-                              Qt.AlignmentFlag.AlignHCenter)
+        grid_layout = QGridLayout(self)
+        grid_layout.addWidget(self._upload_icon, 0, 0, Qt.AlignmentFlag.AlignHCenter)
         grid_layout.addLayout(button_layout, 1, 0)
-        self.setLayout(grid_layout)
 
     def _get_file(self):
-        file_name = QFileDialog.getOpenFileNames(
-            self, "Open file", 'c:\\', "Image files (*.jpg *.png)")
-        self.files_recieved.emit(file_name[0])
+        file_name = QFileDialog.getOpenFileNames(self, "Open file", 'c:\\', "Image files (*.jpg *.png)")
+        if len(file_name[0]) == 0:
+            return
+        self.files_ready.emit(file_name[0])
         self.swap.emit(View.LOAD)
 
     def dragEnterEvent(self, e: QDragMoveEvent):
@@ -69,19 +115,21 @@ class UploadWidget(QWidget, ViewWidget):
 
             # Parse all the files and make sure there are only images.
             links = []
+            if e.mimeData().urls() is None:
+                return
             for r in e.mimeData().urls():
-                file = QFileInfo(r.url())
+                file = QFileInfo(r.toLocalFile())
                 if file.suffix() not in ACCEPTABLE_FILES:
                     return
                 links.append(file.absoluteFilePath())
 
-            self.files_recieved.emit(links)
+            self.files_ready.emit(links)
             self.swap.emit(View.LOAD)
         else:
             e.ignore()
 
 # This layout comes from https://doc.qt.io/archives/qt-4.8/qt-layouts-flowlayout-example.html
-# The python version of this layout comes from https://stackoverflow.com/questions/41621354/pyqt-wrap-around-layout-of-widgets-inside-a-qscrollarea
+# The python version comes from https://stackoverflow.com/questions/41621354/pyqt-wrap-around-layout-of-widgets-inside-a-qscrollarea
 # Allows for horizontal layout of pages until it needs to wrap over vertically.
 class PagesLayout(QLayout):
     def __init__(self, parent=None, margin=10, hspacing=5, vspacing=5):
@@ -165,58 +213,98 @@ class PagesLayout(QLayout):
             line_height = max(line_height, item.sizeHint().height())
         return y + line_height - effective.y()
 
+class PagesWidget(QLabel):
+    clicked = pyqtSignal(ImageModel)
 
-class PagesWidget(QWidget):
-    clicked = pyqtSignal()
-
-    def __init__(self, parent=None):
-        super(QWidget, self).__init__(parent)
-
-        # Test code, setting pages widget to a set size with a color
-        self.setAutoFillBackground(True)
-        palette = self.palette()
-        palette.setColor(QPalette.ColorRole.Window, QColor('red'))
-        self.setPalette(palette)
+    def __init__(self, model: ImageModel = None, display = False):
+        super(QWidget, self).__init__(None)
 
         self.setMinimumSize(100, 141)
 
         self.menu = QMenu(self)
-        self.menu.addAction(QAction("Save as Image", self))
-        self.menu.addAction(QAction("Delete", self))
+
+        if not display:
+            self.setMaximumSize(100, 141)
+            self.menu.addAction(QAction("Save as Image", self))
+            self.menu.addAction(QAction("Delete", self))
+
+        self.model = model
+        self.image = None
+        if self.model is not None:
+            self.model.content_changed.connect(self.update_contents)
+            self.update_contents()
+
+    def update_contents(self):
+        h, w, ch = self.model.final.shape
+        self.image = QPixmap.fromImage(QImage(self.model.final, w, h, ch*w, QImage.Format.Format_BGR888))
+        self.resizeEvent(None)
 
     def contextMenuEvent(self, e):
         self.menu.exec(e.globalPos())
 
+    def mousePressEvent(self, e):
+        self.clicked.emit(self.model)
+
+    def resizeEvent(self, e):
+        if self.image is not None:
+            self.setPixmap(self.image.scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
 
 class ResultWidget(QWidget, ViewWidget):
-
     def __init__(self, parent=None):
         super(QWidget, self).__init__(parent)
 
-        # self._pages =
-        # self._sel_page = 
+        self._sel_page = PagesWidget(display = True)
+        self._pages_layout = PagesLayout()
 
-        pages_layout = PagesLayout()
-        pages_layout.addWidget(PagesWidget())
-        pages_layout.addWidget(PagesWidget())
-        pages_layout.addWidget(PagesWidget())
-        pages_layout.addWidget(PagesWidget())
-        pages_layout.addWidget(PagesWidget())
-        pages_layout.addWidget(PagesWidget())
-        pages_layout.addWidget(PagesWidget())
-        pages_layout.addWidget(PagesWidget())
-
-        group = QGroupBox("Processed Pages")
-        group.setLayout(pages_layout)
+        pages = QWidget()
+        pages.setLayout(self._pages_layout)
 
         scroll_widget = QScrollArea()
         scroll_widget.setWidgetResizable(True)
-        scroll_widget.setWidget(group)
+        scroll_widget.setWidget(pages)
 
-        leftLayout = QVBoxLayout()
+        crop_button = QPushButton("Recrop")
+        mask_button = QPushButton("Remask")
+
+        button_layout = QHBoxLayout()
+        button_layout.addWidget(crop_button)
+        button_layout.addSpacing(1)
+        button_layout.addWidget(mask_button)
         
-        main_layout = QHBoxLayout()
-        main_layout.addLayout(leftLayout, 1)
+        left_layout = QVBoxLayout()
+        left_layout.addWidget(self._sel_page, Qt.AlignmentFlag.AlignCenter)
+        left_layout.addSpacing(1)
+        left_layout.addLayout(button_layout)
+        
+        left_group = QGroupBox("Selected Page")
+        left_group.setLayout(left_layout)
+        
+        main_layout = QHBoxLayout(self)
+        main_layout.addWidget(left_group, 1)
         main_layout.addWidget(scroll_widget, 2)
 
-        self.setLayout(main_layout)
+    def recieve_result(self, result):
+        match result[0]:
+            case 'inputs':
+                for model in result[1]:
+                    page = PagesWidget(model)
+                    page.clicked.connect(self.set_viewing_page)
+                    self._pages_layout.addWidget(page)
+            case 'editcrop':
+                pass
+            case 'editmask':
+                pass
+            case _:
+                print("should not reach here")
+
+    def set_viewing_page(self, model: ImageModel):
+        self._sel_page.model = model
+        self._sel_page.update_contents()
+
+class EditCropWidget(QWidget, ViewWidget):
+    def __init__(self, parent=None):
+        super(QWidget, self).__init__(parent)
+
+class EditMaskWidget(QWidget, ViewWidget):
+    def __init__(self, parent=None):
+        super(QWidget, self).__init__(parent)

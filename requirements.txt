@@ -1,3 +1,6 @@
 PyQt=6.4.1
 pyqtdarktheme=2.1.0
 opencv-python=4.7.0.68
+imutils=0.5.4
+keras-ocr=0.8.9
+tensorflow=2.11.0
