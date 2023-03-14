@@ -1,17 +1,16 @@
 from views import View, ViewWidget
-from imaging import LoadWidget, WorkerResult
+from imaging import LoadWidget, WorkerResult, ImageModel
 
 from PyQt6.QtCore import (
     Qt, pyqtSignal, QFileInfo, QRect, QPoint, QSize
 )
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QPushButton, QMenu, QFileDialog, QStyle, QMainWindow,
-    QScrollArea, QGroupBox,
+    QScrollArea, QGroupBox, 
     QLayout, QLayoutItem, QGridLayout, QVBoxLayout, QHBoxLayout, QStackedLayout
 )
 from PyQt6.QtGui import (
-    QDragMoveEvent, QAction, 
-    QColor, QPalette,
+    QDragMoveEvent, QAction, QImage, QPixmap
 )
 
 ACCEPTABLE_FILES = ['png', 'jpg', 'jpeg']
@@ -25,13 +24,17 @@ class MainWindow(QMainWindow):
         self.setMaximumSize(800, 600)
 
         # All scenes being initialized
-        self.upload_widget      = UploadWidget(self)
-        self.load_widget        = LoadWidget(self)
-        self.result_widget      = ResultWidget(self)
+        self.upload_widget      = UploadWidget()
+        self.load_widget        = LoadWidget()
+        self.result_widget      = ResultWidget()
+        self.crop_widget        = EditCropWidget()
+        self.mask_widget        = EditMaskWidget()
 
         self.upload_widget.swap.connect(self._set_view)
         self.load_widget.swap.connect(self._set_view)
         self.result_widget.swap.connect(self._set_view)
+        self.crop_widget.swap.connect(self._set_view)
+        self.mask_widget.swap.connect(self._set_view)
 
         self.upload_widget.files_ready.connect(self.load_widget.recieve_files)
         self.load_widget.result_ready.connect(self.result_widget.recieve_result)
@@ -40,6 +43,8 @@ class MainWindow(QMainWindow):
         self.stack_layout.addWidget(self.upload_widget)
         self.stack_layout.addWidget(self.load_widget)
         self.stack_layout.addWidget(self.result_widget)
+        self.stack_layout.addWidget(self.crop_widget)
+        self.stack_layout.addWidget(self.mask_widget)
 
         container = QWidget()
         container.setLayout(self.stack_layout)
@@ -54,6 +59,10 @@ class MainWindow(QMainWindow):
                 self.stack_layout.setCurrentWidget(self.load_widget)
             case View.RESULT:
                 self.stack_layout.setCurrentWidget(self.result_widget)
+            case View.EDIT_CROP:
+                self.stack_layout.setCurrentWidget(self.crop_widget)
+            case View.EDIT_MASK:
+                self.stack_layout.setCurrentWidget(self.mask_widget)
 
 class UploadWidget(QWidget, ViewWidget):
     files_ready = pyqtSignal(list)
@@ -75,13 +84,14 @@ class UploadWidget(QWidget, ViewWidget):
         button_layout = QVBoxLayout()
         button_layout.addWidget(self._button)
 
-        grid_layout = QGridLayout()
+        grid_layout = QGridLayout(self)
         grid_layout.addWidget(self._upload_icon, 0, 0, Qt.AlignmentFlag.AlignHCenter)
         grid_layout.addLayout(button_layout, 1, 0)
-        self.setLayout(grid_layout)
 
     def _get_file(self):
         file_name = QFileDialog.getOpenFileNames(self, "Open file", 'c:\\', "Image files (*.jpg *.png)")
+        if len(file_name[0]) == 0:
+            return
         self.files_ready.emit(file_name[0])
         self.swap.emit(View.LOAD)
 
@@ -105,6 +115,8 @@ class UploadWidget(QWidget, ViewWidget):
 
             # Parse all the files and make sure there are only images.
             links = []
+            if e.mimeData().urls() is None:
+                return
             for r in e.mimeData().urls():
                 file = QFileInfo(r.toLocalFile())
                 if file.suffix() not in ACCEPTABLE_FILES:
@@ -201,52 +213,92 @@ class PagesLayout(QLayout):
             line_height = max(line_height, item.sizeHint().height())
         return y + line_height - effective.y()
 
-class PagesWidget(QWidget):
-    clicked = pyqtSignal()
+class PagesWidget(QLabel):
+    clicked = pyqtSignal(ImageModel)
 
-    def __init__(self, parent=None):
-        super(QWidget, self).__init__(parent)
-
-        # Test code, setting pages widget to a set size with a color
-        self.setAutoFillBackground(True)
-        palette = self.palette()
-        palette.setColor(QPalette.ColorRole.Window, QColor('red'))
-        self.setPalette(palette)
+    def __init__(self, model: ImageModel = None, display = False):
+        super(QWidget, self).__init__(None)
 
         self.setMinimumSize(100, 141)
 
         self.menu = QMenu(self)
-        self.menu.addAction(QAction("Save as Image", self))
-        self.menu.addAction(QAction("Delete", self))
+
+        if not display:
+            self.setMaximumSize(100, 141)
+            self.menu.addAction(QAction("Save as Image", self))
+            self.menu.addAction(QAction("Delete", self))
+
+        self.model = model
+        self.image = None
+        if self.model is not None:
+            self.model.content_changed.connect(self.update_contents)
+            self.update_contents()
+
+    def update_contents(self):
+        h, w, ch = self.model.final.shape
+        self.image = QPixmap.fromImage(QImage(self.model.final, w, h, ch*w, QImage.Format.Format_BGR888))
+        self.resizeEvent(None)
 
     def contextMenuEvent(self, e):
         self.menu.exec(e.globalPos())
 
-class ResultWidget(QWidget, ViewWidget):
+    def mousePressEvent(self, e):
+        self.clicked.emit(self.model)
 
+    def resizeEvent(self, e):
+        if self.image is not None:
+            self.setPixmap(self.image.scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+
+class ResultWidget(QWidget, ViewWidget):
     def __init__(self, parent=None):
         super(QWidget, self).__init__(parent)
 
-        # self._pages =
-        # self._sel_page = 
+        self._sel_page = PagesWidget(display = True)
+        self._pages_layout = PagesLayout()
 
-        pages_layout = PagesLayout()
-
-        group = QGroupBox("Processed Pages")
-        group.setLayout(pages_layout)
+        pages = QWidget()
+        pages.setLayout(self._pages_layout)
 
         scroll_widget = QScrollArea()
         scroll_widget.setWidgetResizable(True)
-        scroll_widget.setWidget(group)
+        scroll_widget.setWidget(pages)
 
-        leftLayout = QVBoxLayout()
+        crop_button = QPushButton("Recrop")
+        mask_button = QPushButton("Remask")
+
+        button_layout = QHBoxLayout()
+        button_layout.addWidget(crop_button)
+        button_layout.addSpacing(1)
+        button_layout.addWidget(mask_button)
         
-        main_layout = QHBoxLayout()
-        main_layout.addLayout(leftLayout, 1)
+        left_layout = QVBoxLayout()
+        left_layout.addWidget(self._sel_page, Qt.AlignmentFlag.AlignCenter)
+        left_layout.addSpacing(1)
+        left_layout.addLayout(button_layout)
+        
+        left_group = QGroupBox("Selected Page")
+        left_group.setLayout(left_layout)
+        
+        main_layout = QHBoxLayout(self)
+        main_layout.addWidget(left_group, 1)
         main_layout.addWidget(scroll_widget, 2)
 
-        self.setLayout(main_layout)
-
-    def recieve_result(self, result: WorkerResult):
+    def recieve_result(self, r: WorkerResult):
+        if r.type == 'inputs':
+            for model in r.result:
+                page = PagesWidget(model)
+                self._pages_layout.addWidget(page)
+                page.clicked.connect(self.set_viewing_page)
         pass
-        
+
+    def set_viewing_page(self, model: ImageModel):
+        self._sel_page.model = model
+        self._sel_page.update_contents()
+
+class EditCropWidget(QWidget, ViewWidget):
+    def __init__(self, parent=None):
+        super(QWidget, self).__init__(parent)
+
+class EditMaskWidget(QWidget, ViewWidget):
+    def __init__(self, parent=None):
+        super(QWidget, self).__init__(parent)
