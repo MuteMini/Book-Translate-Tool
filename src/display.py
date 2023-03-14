@@ -1,5 +1,5 @@
 from views import View, ViewWidget
-from imaging import LoadWidget, WorkerResult, ImageModel
+from imaging import LoadWidget, ImageModel
 
 from PyQt6.QtCore import (
     Qt, pyqtSignal, QFileInfo, QRect, QPoint, QSize
@@ -283,13 +283,19 @@ class ResultWidget(QWidget, ViewWidget):
         main_layout.addWidget(left_group, 1)
         main_layout.addWidget(scroll_widget, 2)
 
-    def recieve_result(self, r: WorkerResult):
-        if r.type == 'inputs':
-            for model in r.result:
-                page = PagesWidget(model)
-                self._pages_layout.addWidget(page)
-                page.clicked.connect(self.set_viewing_page)
-        pass
+    def recieve_result(self, result):
+        match result[0]:
+            case 'inputs':
+                for model in result[1]:
+                    page = PagesWidget(model)
+                    page.clicked.connect(self.set_viewing_page)
+                    self._pages_layout.addWidget(page)
+            case 'editcrop':
+                pass
+            case 'editmask':
+                pass
+            case _:
+                print("should not reach here")
 
     def set_viewing_page(self, model: ImageModel):
         self._sel_page.model = model

@@ -51,11 +51,6 @@ class Worker(QRunnable):
         with QMutexLocker(self.mutex):
             self.is_stop = True
 
-class WorkerResult(object):
-    def __init__(self, type, result):
-        self.type = type
-        self.result = result
-
 class ImageModel(QObject):
     content_changed = pyqtSignal(str)
 
@@ -68,7 +63,7 @@ class ImageModel(QObject):
         self.final = final
 
 class LoadWidget(QWidget, ViewWidget):
-    result_ready = pyqtSignal(WorkerResult)
+    result_ready = pyqtSignal(tuple)
 
     def __init__(self, parent=None):
         super(QWidget, self).__init__(parent)
@@ -82,7 +77,7 @@ class LoadWidget(QWidget, ViewWidget):
         self._progress_bar.setFixedWidth(350)
         self._progress_bar.setValue(0)
 
-        self._label = QLabel("Starting Progress")
+        self._label = QLabel()
         self._label.resize(300, 20)
         
         layout = QVBoxLayout()
@@ -97,6 +92,7 @@ class LoadWidget(QWidget, ViewWidget):
     @pyqtSlot(list)
     def recieve_files(self, img_paths):
         self._progress_bar.setRange(0, len(img_paths)*2)
+        self._label.setText("Starting Progress")
         self.start_thread(Worker(self._run_full_thread, img_paths))
 
     def start_thread(self, worker: Worker):
@@ -145,8 +141,9 @@ class LoadWidget(QWidget, ViewWidget):
             
             result.append(ImageModel(id, org, corner, mask, final))
             
+        worker_object.signals.progress.emit("Wrapping up", progress)
         K.clear_session()
-        return WorkerResult('inputs', result)
+        return 'inputs', result
     
     def _run_crop_thread(self, worker_object):
         pass
