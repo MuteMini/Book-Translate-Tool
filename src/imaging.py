@@ -3,6 +3,9 @@ from detection import DocUtils
 
 import traceback
 
+from keras_ocr.pipeline import Pipeline
+from keras import backend as K
+
 from PyQt6.QtCore import (
     Qt, pyqtSignal, pyqtSlot, QObject,
     QThreadPool, QRunnable, QMutex, QMutexLocker
@@ -49,9 +52,20 @@ class Worker(QRunnable):
             self.is_stop = True
 
 class WorkerResult(object):
-    def __init__(self, type, object=None):
+    def __init__(self, type, result):
         self.type = type
-        self.object = object
+        self.result = result
+
+class ImageModel(QObject):
+    content_changed = pyqtSignal(str)
+
+    def __init__(self, id, org, corner, mask, final, parent=None):
+        super(QObject, self).__init__(parent)
+        self.id = id
+        self.org = org
+        self.corner = corner
+        self.tx_mask = mask
+        self.final = final
 
 class LoadWidget(QWidget, ViewWidget):
     result_ready = pyqtSignal(WorkerResult)
@@ -108,28 +122,31 @@ class LoadWidget(QWidget, ViewWidget):
         self._progress_bar.setValue(progress)
 
     def _run_full_thread(self, worker_object: Worker, img_paths):
+        pipeline = Pipeline()
         progress = 0
 
-        images = []
+        result = []
         for id, img in enumerate(img_paths):
             worker_object.signals.progress.emit(f"Cropping Image #{id+1}", progress)
             if worker_object.is_stop:
                 return None
             
-            images.append(DocUtils.get_document(img))
+            org, corner = DocUtils.get_document(img)
+            crop = DocUtils.crop_document(org, corner)
             progress += 1
 
-        masks = []
-        for id, (image, corners) in enumerate(images):
             worker_object.signals.progress.emit(f"Removing Text #{id+1}", progress)
             if worker_object.is_stop:
                 return None
-            
-            cropped = DocUtils.four_point_transform(image, corners)
-            masks.append(DocUtils.get_text_mask(cropped))
+
+            mask = DocUtils.get_text_mask(crop, pipeline)
+            final = DocUtils.get_resized_final(crop, mask)
             progress += 1
-    
-        return WorkerResult('Input Images', (images, masks))
+            
+            result.append(ImageModel(id, org, corner, mask, final))
+            
+        K.clear_session()
+        return WorkerResult('inputs', result)
     
     def _run_crop_thread(self, worker_object):
         pass
