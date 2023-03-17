@@ -105,6 +105,8 @@ class DocumentLines(object):
         return out + f"{self.lines[-1].get_list()}"
 
 class DocUtils:
+    CROP_RATIO = 1.294
+
     # Exception used to tell QtObjects that the document could not be found
     class NoDocumentDetectedError(Exception):
         pass
@@ -136,10 +138,13 @@ class DocUtils:
         width_b = np.sqrt(((tr[0] - tl[0])**2) + ((tr[1] - tl[1])**2))
         max_width = max(int(width_a), int(width_b))
 
-        height_a = np.sqrt(((tr[0] - br[0])**2) + ((tr[1] - br[1])**2))
-        height_b = np.sqrt(((tl[0] - bl[0])**2) + ((tl[1] - bl[1])**2))
-        max_height = max(int(height_a), int(height_b))
-        max_height = max(int(max_width*1.294), max_height)
+        # for letter paper ratio, w/h = 1.294
+        max_height = int(max_width*DocUtils.CROP_RATIO)
+
+        # height_a = np.sqrt(((tr[0] - br[0])**2) + ((tr[1] - br[1])**2))
+        # height_b = np.sqrt(((tl[0] - bl[0])**2) + ((tl[1] - bl[1])**2))
+        # max_height = max(int(height_a), int(height_b))
+        # max_height = max(int(max_width*1.294), max_height)
 
         dst = np.array([
             [0, 0],
