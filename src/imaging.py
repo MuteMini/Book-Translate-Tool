@@ -12,7 +12,7 @@ from PyQt6.QtCore import (
 )
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QProgressBar, QVBoxLayout
-)
+)   
 
 # Worker Class comes from this repo: https://github.com/mochisue/pyqt-async-sample/blob/7bd6124c3c6fa8e88f792581dbfda44d7144552b/src/sample.py#L144
 # Allows for any function to be run using the QThreadPool, works perfectly for our use case of QT's asynchronous features.
@@ -20,7 +20,7 @@ class WorkerSignals(QObject):
     finished = pyqtSignal()
     error = pyqtSignal(str)
     result = pyqtSignal(object)
-    progress = pyqtSignal(str, int)
+    progress = pyqtSignal(str, int, int)
 
 # Any function going in here should be able to take the worker object.
 class Worker(QRunnable):
@@ -54,13 +54,14 @@ class Worker(QRunnable):
 class ImageModel(QObject):
     content_changed = pyqtSignal(str)
 
-    def __init__(self, id, org, corner, mask, final, parent=None):
+    def __init__(self, org, corner, mask, final, parent=None):
         super(QObject, self).__init__(parent)
-        self.id = id
         self.org = org
         self.corner = corner
         self.tx_mask = mask
         self.final = final
+
+### ------------------------------------------------------------------------------ ###
 
 class LoadWidget(QWidget, ViewWidget):
     result_ready = pyqtSignal(tuple)
@@ -91,8 +92,6 @@ class LoadWidget(QWidget, ViewWidget):
     
     @pyqtSlot(list)
     def recieve_files(self, img_paths):
-        self._progress_bar.setRange(0, len(img_paths)*2)
-        self._label.setText("Starting Progress")
         self.start_thread(Worker(self._run_full_thread, img_paths))
 
     def start_thread(self, worker: Worker):
@@ -113,17 +112,23 @@ class LoadWidget(QWidget, ViewWidget):
     def _finish_thread(self):
         self._thread_pool.waitForDone()
 
-    def _progress_thread(self, text, progress):
+    def _progress_thread(self, text, progress, limit):
         self._label.setText(text)
+        self._progress_bar.setRange(0, limit)
         self._progress_bar.setValue(progress)
 
     def _run_full_thread(self, worker_object: Worker, img_paths):
+        worker_object.signals.progress.emit(f"Starting Process", 0, 0)
+
         pipeline = Pipeline()
+        sorted(img_paths)
+
         progress = 0
+        limit = len(img_paths)*2
 
         result = []
         for id, img in enumerate(img_paths):
-            worker_object.signals.progress.emit(f"Cropping Image #{id+1}", progress)
+            worker_object.signals.progress.emit(f"Cropping Image #{id+1}", progress, limit)
             if worker_object.is_stop:
                 return None
             
@@ -131,7 +136,7 @@ class LoadWidget(QWidget, ViewWidget):
             crop = DocUtils.crop_document(org, corner)
             progress += 1
 
-            worker_object.signals.progress.emit(f"Removing Text #{id+1}", progress)
+            worker_object.signals.progress.emit(f"Removing Text #{id+1}", progress, limit)
             if worker_object.is_stop:
                 return None
 
@@ -139,9 +144,9 @@ class LoadWidget(QWidget, ViewWidget):
             final = DocUtils.get_resized_final(crop, mask)
             progress += 1
             
-            result.append(ImageModel(id, org, corner, mask, final))
+            result.append(ImageModel(org, corner, mask, final))
             
-        worker_object.signals.progress.emit("Wrapping up", progress)
+        worker_object.signals.progress.emit("Wrapping up", progress, limit)
         K.clear_session()
         return 'inputs', result
     
