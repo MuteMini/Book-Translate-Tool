@@ -91,8 +91,9 @@ class LoadWidget(QWidget, ViewWidget):
         self.setLayout(layout)
     
     @pyqtSlot(list)
+    # Replace test thread with full thread
     def recieve_files(self, img_paths):
-        self.start_thread(Worker(self._run_full_thread, img_paths))
+        self.start_thread(Worker(self._run_test_thread, img_paths))
 
     def start_thread(self, worker: Worker):
         worker.signals.error.connect(self._error_thread)
@@ -116,6 +117,25 @@ class LoadWidget(QWidget, ViewWidget):
         self._label.setText(text)
         self._progress_bar.setRange(0, limit)
         self._progress_bar.setValue(progress)
+
+    # To remove function use after testing
+    def _run_test_thread(self, worker_object: Worker, img_paths):
+        worker_object.signals.progress.emit(f"Starting Process", 0, 0)
+
+        sorted(img_paths)
+        progress = 0
+        limit = len(img_paths)
+
+        result = []
+        for id, img in enumerate(img_paths):
+            worker_object.signals.progress.emit(f"Cropping Image #{id+1}", progress, limit)
+            org, corner = DocUtils.get_document(img)
+            final = DocUtils.crop_document(org, corner)
+            progress += 1
+            result.append(ImageModel(org, corner, None, final))
+
+        worker_object.signals.progress.emit("Wrapping up", progress, limit)
+        return 'inputs', result
 
     def _run_full_thread(self, worker_object: Worker, img_paths):
         worker_object.signals.progress.emit(f"Starting Process", 0, 0)
