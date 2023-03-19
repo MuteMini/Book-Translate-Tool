@@ -6,7 +6,7 @@ class View(Enum):
     LOAD     = auto()
     RESULT   = auto()
     EDIT_CROP = auto()
-    EDIT_TEXT = auto()
+    EDIT_MASK = auto()
     MERGE    = auto()
 
 class ViewWidget:
