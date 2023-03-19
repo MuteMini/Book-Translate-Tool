@@ -1,7 +1,7 @@
-import os
-import colorsys
+import constants
 
 import cv2
+import colorsys
 import imutils
 import numpy as np
 
@@ -105,8 +105,6 @@ class DocumentLines(object):
         return out + f"{self.lines[-1].get_list()}"
 
 class DocUtils:
-    CROP_RATIO = 1.294
-
     # Exception used to tell QtObjects that the document could not be found
     class NoDocumentDetectedError(Exception):
         pass
@@ -139,7 +137,7 @@ class DocUtils:
         max_width = max(int(width_a), int(width_b))
 
         # for letter paper ratio, w/h = 1.294
-        max_height = int(max_width*DocUtils.CROP_RATIO)
+        max_height = int(max_width*constants.CROP_RATIO)
 
         # height_a = np.sqrt(((tr[0] - br[0])**2) + ((tr[1] - br[1])**2))
         # height_b = np.sqrt(((tl[0] - bl[0])**2) + ((tl[1] - bl[1])**2))
