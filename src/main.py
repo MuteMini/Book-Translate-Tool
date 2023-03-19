@@ -3,8 +3,6 @@ from display import MainWindow
 import sys
 import os
 
-import tensorflow as tf
-
 import qdarktheme
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication
