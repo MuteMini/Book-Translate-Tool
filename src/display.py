@@ -6,7 +6,7 @@ from PyQt6.QtCore import (
     Qt, pyqtSignal, QMimeData, QFileInfo, QRect, QPoint, QSize
 )
 from PyQt6.QtWidgets import (
-    QWidget, QLabel, QPushButton, QMenu, QFileDialog, QStyle, QMainWindow,
+    QWidget, QLabel, QPushButton, QMenu, QFileDialog, QStyle, QMainWindow, QMessageBox,
     QScrollArea, QGroupBox,
     QLayout, QLayoutItem, QGridLayout, QVBoxLayout, QHBoxLayout, QStackedLayout
 )
@@ -38,6 +38,8 @@ class MainWindow(QMainWindow):
 
         self.upload_widget.files_ready.connect(self.load_widget.recieve_files)
         self.load_widget.result_ready.connect(self.result_widget.recieve_result)
+
+        self.result_widget.save_file.connect(self.load_widget.save_files)
         
         self.stack_layout = QStackedLayout()
         self.stack_layout.addWidget(self.upload_widget)
@@ -223,6 +225,8 @@ class PagesLayout(QLayout):
 
 class PagesWidget(QLabel):
     clicked = pyqtSignal(QPixmap)
+    delete = pyqtSignal(QWidget)
+    save = pyqtSignal(ImageModel)
 
     def __init__(self, model:ImageModel=None):
         super(QWidget, self).__init__(None)
@@ -232,9 +236,14 @@ class PagesWidget(QLabel):
         self.setMaximumSize(100, int(100*constants.CROP_RATIO))
         self.setScaledContents(True)
 
+        del_action = QAction("Delete", self)
+        del_action.triggered.connect(lambda: self.delete.emit(self))
+        save_action = QAction("Save as Image", self)
+        save_action.triggered.connect(lambda: self.save.emit(self.model))
+
         self.menu = QMenu(self)
-        self.menu.addAction(QAction("Save as Image", self))
-        self.menu.addAction(QAction("Delete", self))
+        self.menu.addAction(del_action)
+        self.menu.addAction(save_action)
 
         self.model = model
         self.image = None
@@ -242,6 +251,10 @@ class PagesWidget(QLabel):
             h, w, ch = self.model.final.shape
             self.image = QPixmap.fromImage(QImage(self.model.final, w, h, ch*w, QImage.Format.Format_BGR888))
             self.setPixmap(self.image)
+
+    def __del__(self):
+        del self.image
+        del self.model
 
     def contextMenuEvent(self, e):
         self.menu.exec(e.globalPos())
@@ -303,6 +316,12 @@ class PageWrapperWidget(QWidget):
                 self.layout().move_item(s_id, id)
                 break
 
+    def list_models(self):
+        list = []
+        for id in range(self.layout().count()):
+            list.append(self.layout().itemAt(id).widget().model)
+        return list
+
 class SelPageWidget(QLabel):
     def __init__(self, parent=None):
         super(QWidget, self).__init__(parent)
@@ -320,6 +339,8 @@ class SelPageWidget(QLabel):
             self.resizeEvent(None)
 
 class ResultWidget(QWidget, ViewWidget):
+    save_file = pyqtSignal(list, str, str)
+
     def __init__(self, parent=None):
         super(QWidget, self).__init__(parent)
 
@@ -331,6 +352,7 @@ class ResultWidget(QWidget, ViewWidget):
         scroll_widget.setWidget(self._pages)
 
         compile_button = QPushButton("Compile")
+        compile_button.clicked.connect(self._merge_files)
 
         right_layout = QVBoxLayout()
         right_layout.addWidget(scroll_widget)
@@ -356,12 +378,21 @@ class ResultWidget(QWidget, ViewWidget):
         main_layout.addWidget(left_group, 1)
         main_layout.addLayout(right_layout, 2)
 
+    def _merge_files(self):
+        save_name = QFileDialog.getSaveFileName(self, "Save file", 'c:\\', f"PDF (*.pdf)")
+        if save_name[0] == "":
+            return
+        self.save_file.emit(self._pages.list_models(), save_name[0], save_name[1])
+        self.swap.emit(View.LOAD)
+
     def recieve_result(self, result):
         match result[0]:
             case 'inputs':
                 for model in result[1]:
                     page = PagesWidget(model)
                     page.clicked.connect(self._select.set_pixmap)
+                    page.delete.connect(self._delete_widget)
+                    # page.save.connect()
                     self._pages.layout().addWidget(page)
             case 'editcrop':
                 pass
@@ -369,6 +400,14 @@ class ResultWidget(QWidget, ViewWidget):
                 pass
             case _:
                 print("should not reach here")
+
+    def _delete_widget(self, widget: QWidget):
+        widget.deleteLater()
+        self._pages.layout().removeWidget(widget)
+        self._pages.layout().update()
+        if self._pages.layout().count() <= 0:
+            QMessageBox.critical(self, "Error", "No photos found to process. Please go back and insert photos.")
+            self.swap(View.UPLOAD)
 
 ### ------------------------------------------------------------------------------ ###
 
