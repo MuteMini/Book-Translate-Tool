@@ -7,7 +7,6 @@ class View(Enum):
     RESULT   = auto()
     EDIT_CROP = auto()
     EDIT_MASK = auto()
-    MERGE    = auto()
 
 class ViewWidget:
     swap = pyqtSignal(View)
