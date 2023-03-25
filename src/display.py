@@ -407,7 +407,7 @@ class ResultWidget(QWidget, ViewWidget):
         self._pages.layout().update()
         if self._pages.layout().count() <= 0:
             QMessageBox.critical(self, "Error", "No photos found to process. Please go back and insert photos.")
-            self.swap(View.UPLOAD)
+            self.swap.emit(View.UPLOAD)
 
 ### ------------------------------------------------------------------------------ ###
 
