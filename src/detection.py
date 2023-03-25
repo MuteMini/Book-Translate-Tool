@@ -5,6 +5,8 @@ import colorsys
 import imutils
 import numpy as np
 
+from PIL import Image
+
 import keras_ocr.pipeline
 
 THETA_THRESH = np.pi/45
@@ -218,3 +220,8 @@ class DocUtils:
     def get_resized_final(img, mask):
         resized = cv2.inpaint(img, mask, 7, cv2.INPAINT_NS)
         return imutils.convenience.resize(resized, height=600)
+    
+    def opencv_to_pil(img, height):
+        img = imutils.convenience.resize(img, height=height)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        return Image.fromarray(img)

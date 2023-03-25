@@ -6,12 +6,14 @@ import traceback
 from keras_ocr.pipeline import Pipeline
 from keras import backend as K
 
+from PIL import Image
+
 from PyQt6.QtCore import (
     Qt, pyqtSignal, pyqtSlot, QObject,
     QThreadPool, QRunnable, QMutex, QMutexLocker
 )
 from PyQt6.QtWidgets import (
-    QWidget, QLabel, QProgressBar, QVBoxLayout
+    QWidget, QLabel, QProgressBar, QVBoxLayout, QMessageBox
 )   
 
 # Worker Class comes from this repo: https://github.com/mochisue/pyqt-async-sample/blob/7bd6124c3c6fa8e88f792581dbfda44d7144552b/src/sample.py#L144
@@ -90,10 +92,14 @@ class LoadWidget(QWidget, ViewWidget):
         
         self.setLayout(layout)
     
-    @pyqtSlot(list)
     # Replace test thread with full thread
+    @pyqtSlot(list)
     def recieve_files(self, img_paths):
         self.start_thread(Worker(self._run_test_thread, img_paths))
+
+    @pyqtSlot(list, str, str)
+    def save_files(self, img, path, type):
+        self.start_thread(Worker(self._run_save_thread, img, path, type))
 
     def start_thread(self, worker: Worker):
         worker.signals.error.connect(self._error_thread)
@@ -106,9 +112,12 @@ class LoadWidget(QWidget, ViewWidget):
         print(message)
 
     def _result_thread(self, result):
-        self.result_ready.emit(result)
-        self.swap.emit(View.RESULT)
-        pass
+        if result[0] == 'final':
+            QMessageBox.about(self, "Alert", "File Saved!")
+            self.swap.emit(View.UPLOAD)
+        else:
+            self.result_ready.emit(result)
+            self.swap.emit(View.RESULT)
 
     def _finish_thread(self):
         self._thread_pool.waitForDone()
@@ -170,6 +179,19 @@ class LoadWidget(QWidget, ViewWidget):
         K.clear_session()
         return 'inputs', result
     
+    def _run_save_thread(self, worker_object: Worker, imgs, path, type):
+        worker_object.signals.progress.emit(f"Saving as File", 0, 0)
+
+        pil_img: list[Image.Image] = []
+        for model in imgs:
+            pil_img.append(DocUtils.opencv_to_pil(model.final, 1400))
+
+        # Could be reused to save as multiple different types
+        pil_img[0].save(path, "PDF", resolution=100.0, save_all=True, append_images=pil_img[1:])
+
+        worker_object.signals.progress.emit("Done", 1, 1)
+        return 'final', None
+
     def _run_crop_thread(self, worker_object):
         pass
 
