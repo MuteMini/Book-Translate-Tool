@@ -82,6 +82,8 @@ class LoadWidget(QWidget, ViewWidget):
 
         self._label = QLabel()
         self._label.resize(300, 20)
+
+        self.worker = None
         
         layout = QVBoxLayout()
         layout.addStretch(1)
@@ -92,6 +94,11 @@ class LoadWidget(QWidget, ViewWidget):
         
         self.setLayout(layout)
     
+    def closeEvent(self, a0):
+        if isinstance(self.worker, Worker):
+            self.worker.stop()
+        a0.accept()
+
     # Replace test thread with full thread
     @pyqtSlot(list)
     def recieve_files(self, img_paths):
@@ -107,11 +114,18 @@ class LoadWidget(QWidget, ViewWidget):
         worker.signals.finished.connect(self._finish_thread)
         worker.signals.progress.connect(self._progress_thread)
         self._thread_pool.start(worker)
+        self.worker = worker
 
     def _error_thread(self, message):
         print(message)
 
     def _result_thread(self, result):
+        # Happens when thread is force stopped.
+        if result is None:
+            return
+        
+        self.worker = None
+        
         if result[0] == 'final':
             QMessageBox.about(self, "Alert", "File Saved!")
             self.swap.emit(View.UPLOAD)
@@ -170,7 +184,7 @@ class LoadWidget(QWidget, ViewWidget):
                 return None
 
             mask = DocUtils.get_text_mask(crop, pipeline)
-            final = DocUtils.get_resized_final(crop, mask)
+            final = DocUtils.get_resized_final(crop, mask, height=600)
             progress += 1
             
             result.append(ImageModel(org, corner, mask, final))
@@ -182,9 +196,19 @@ class LoadWidget(QWidget, ViewWidget):
     def _run_save_thread(self, worker_object: Worker, imgs, path, type):
         worker_object.signals.progress.emit(f"Saving as File", 0, 0)
 
+        progress = 0
+        limit = len(imgs)
+
         pil_img: list[Image.Image] = []
-        for model in imgs:
-            pil_img.append(DocUtils.opencv_to_pil(model.final, 1400))
+        for id, model in enumerate(imgs):
+            worker_object.signals.progress.emit(f"Appending page {id}.", progress, limit)
+            if worker_object.is_stop:
+                return None
+            
+            crop = DocUtils.crop_document(model.org, model.corner)
+            final = DocUtils.get_resized_final(crop, model.tx_mask, width=1000)
+            pil_img.append(DocUtils.opencv_to_pil(final))
+            progress += 1
 
         # Could be reused to save as multiple different types
         pil_img[0].save(path, "PDF", resolution=100.0, save_all=True, append_images=pil_img[1:])
