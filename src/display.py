@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QLayout, QLayoutItem, QGridLayout, QVBoxLayout, QHBoxLayout, QStackedLayout
 )
 from PyQt6.QtGui import (
-    QDrag, QDragMoveEvent, QDropEvent, QMouseEvent, QAction, 
+    QDrag, QDragMoveEvent, QDropEvent, QMouseEvent, QAction,
     QImage, QPixmap, QPainter
 )
 
@@ -24,11 +24,11 @@ class MainWindow(QMainWindow):
         self.setMaximumSize(800, 600)
 
         # All scenes being initialized
-        self.upload_widget      = UploadWidget()
-        self.load_widget        = LoadWidget()
-        self.result_widget      = ResultWidget()
-        self.crop_widget        = EditCropWidget()
-        self.mask_widget        = EditMaskWidget()
+        self.upload_widget = UploadWidget()
+        self.load_widget = LoadWidget()
+        self.result_widget = ResultWidget()
+        self.crop_widget = EditCropWidget()
+        self.mask_widget = EditMaskWidget()
 
         self.upload_widget.swap.connect(self._set_view)
         self.load_widget.swap.connect(self._set_view)
@@ -37,10 +37,11 @@ class MainWindow(QMainWindow):
         self.mask_widget.swap.connect(self._set_view)
 
         self.upload_widget.files_ready.connect(self.load_widget.recieve_files)
-        self.load_widget.result_ready.connect(self.result_widget.recieve_result)
+        self.load_widget.result_ready.connect(
+            self.result_widget.recieve_result)
 
         self.result_widget.save_file.connect(self.load_widget.save_files)
-        
+
         self.stack_layout = QStackedLayout()
         self.stack_layout.addWidget(self.upload_widget)
         self.stack_layout.addWidget(self.load_widget)
@@ -87,7 +88,8 @@ class UploadWidget(QWidget, ViewWidget):
         button_layout.addWidget(self._button)
 
         grid_layout = QGridLayout(self)
-        grid_layout.addWidget(self._upload_icon, 0, 0, Qt.AlignmentFlag.AlignHCenter)
+        grid_layout.addWidget(self._upload_icon, 0, 0,
+                              Qt.AlignmentFlag.AlignHCenter)
         grid_layout.addLayout(button_layout, 1, 0)
 
     def dragEnterEvent(self, e: QDragMoveEvent):
@@ -124,7 +126,8 @@ class UploadWidget(QWidget, ViewWidget):
             e.ignore()
 
     def _get_file(self):
-        file_name = QFileDialog.getOpenFileNames(self, "Open file", 'c:\\', f"Image files ({constants.ACCEPTABLE_FILE_DIALOG})")
+        file_name = QFileDialog.getOpenFileNames(
+            self, "Open file", 'c:\\', f"Image files ({constants.ACCEPTABLE_FILE_DIALOG})")
         if len(file_name[0]) == 0:
             return
         self.files_ready.emit(file_name[0])
@@ -138,7 +141,7 @@ class UploadWidget(QWidget, ViewWidget):
 class PagesLayout(QLayout):
     def __init__(self, parent=None, margin=10, hspacing=5, vspacing=5):
         super(PagesLayout, self).__init__(parent)
-        
+
         self._hspacing = hspacing
         self._vspacing = vspacing
         self._items = []
@@ -194,7 +197,7 @@ class PagesLayout(QLayout):
         size += QSize(2*self.contentsMargins().top(),
                       2*self.contentsMargins().top())
         return size
-    
+
     def move_item(self, orig: int, dest: int):
         if 0 <= dest and 0 <= orig < len(self._items):
             item = self._items.pop(orig)
@@ -223,12 +226,18 @@ class PagesLayout(QLayout):
             line_height = max(line_height, item.sizeHint().height())
         return y + line_height - effective.y()
 
+    def clear(self):
+        for item in self._items:
+            item.widget().deleteLater()
+        self._items = []
+        self.update()
+        
 class PagesWidget(QLabel):
-    clicked = pyqtSignal(QPixmap)
+    clicked = pyqtSignal(ImageModel, QPixmap)
     delete = pyqtSignal(QWidget)
     save = pyqtSignal(ImageModel)
 
-    def __init__(self, model:ImageModel=None):
+    def __init__(self, model: ImageModel = None):
         super(QWidget, self).__init__(None)
 
         # Default size.
@@ -261,7 +270,7 @@ class PagesWidget(QLabel):
 
     def mousePressEvent(self, e: QMouseEvent):
         if e.buttons() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(self.pixmap())
+            self.clicked.emit(self.model, self.pixmap())
             e.accept()
         else:
             e.ignore()
@@ -328,18 +337,22 @@ class SelPageWidget(QLabel):
 
         self.setMinimumSize(100, 141)
         self.image = None
+        self.model = None
 
     def resizeEvent(self, e):
         if self.image is not None:
-            self.setPixmap(self.image.scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            self.setPixmap(self.image.scaled(self.size(), 
+                                            Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
 
-    def set_pixmap(self, image: QPixmap):
-        if image is not None:
-            self.image = image
+    def set_model(self, model: ImageModel, img: QPixmap):
+        if model is not None:
+            self.model = model
+            self.image = img
             self.resizeEvent(None)
 
 class ResultWidget(QWidget, ViewWidget):
     save_file = pyqtSignal(list, str, str)
+    selected_model = pyqtSignal(ImageModel)
 
     def __init__(self, parent=None):
         super(QWidget, self).__init__(parent)
@@ -359,21 +372,23 @@ class ResultWidget(QWidget, ViewWidget):
         right_layout.addWidget(compile_button)
 
         crop_button = QPushButton("Recrop")
+        crop_button.clicked.connect(lambda: self.swap.emit(View.EDIT_CROP))
         mask_button = QPushButton("Remask")
+        mask_button.clicked.connect(lambda: self.swap.emit(View.EDIT_MASK))
 
         button_layout = QHBoxLayout()
         button_layout.addWidget(crop_button)
         button_layout.addSpacing(1)
         button_layout.addWidget(mask_button)
-        
+
         left_layout = QVBoxLayout()
         left_layout.addWidget(self._select, Qt.AlignmentFlag.AlignCenter)
         left_layout.addSpacing(1)
         left_layout.addLayout(button_layout)
-        
+
         left_group = QGroupBox("Selected Page")
         left_group.setLayout(left_layout)
-        
+
         main_layout = QHBoxLayout(self)
         main_layout.addWidget(left_group, 1)
         main_layout.addLayout(right_layout, 2)
@@ -388,9 +403,10 @@ class ResultWidget(QWidget, ViewWidget):
     def recieve_result(self, result):
         match result[0]:
             case 'inputs':
+                self._pages.layout().clear()
                 for model in result[1]:
                     page = PagesWidget(model)
-                    page.clicked.connect(self._select.set_pixmap)
+                    page.clicked.connect(self._select.set_model)
                     page.delete.connect(self._delete_widget)
                     # page.save.connect()
                     self._pages.layout().addWidget(page)
@@ -406,7 +422,7 @@ class ResultWidget(QWidget, ViewWidget):
         self._pages.layout().removeWidget(widget)
         self._pages.layout().update()
         if self._pages.layout().count() <= 0:
-            QMessageBox.critical(self, "Error", "No photos found to process. Please go back and insert photos.")
+            QMessageBox.critical(self, "Error", "All photos deleted. Please go back and insert photos.")
             self.swap.emit(View.UPLOAD)
 
 ### ------------------------------------------------------------------------------ ###
@@ -414,6 +430,9 @@ class ResultWidget(QWidget, ViewWidget):
 class EditCropWidget(QWidget, ViewWidget):
     def __init__(self, parent=None):
         super(QWidget, self).__init__(parent)
+
+
+### ------------------------------------------------------------------------------ ###
 
 class EditMaskWidget(QWidget, ViewWidget):
     def __init__(self, parent=None):
