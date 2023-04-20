@@ -27,7 +27,7 @@ class WorkerSignals(QObject):
 # Any function going in here should be able to take the worker object.
 class Worker(QRunnable):
     def __init__(self, fn_run, *args, **kwargs):
-        super(QRunnable, self).__init__()
+        super().__init__()
         self.fn_run = fn_run
         self.args = args
         self.kwargs = kwargs
@@ -57,7 +57,7 @@ class ImageModel(QObject):
     content_changed = pyqtSignal(str)
 
     def __init__(self, org, corner, mask, final, parent=None):
-        super(QObject, self).__init__(parent)
+        super().__init__(parent)
         self.org = org
         self.corner = corner
         self.tx_mask = mask
@@ -69,7 +69,7 @@ class LoadWidget(QWidget, ViewWidget):
     result_ready = pyqtSignal(tuple)
 
     def __init__(self, parent=None):
-        super(QWidget, self).__init__(parent)
+        super().__init__(parent)
 
         # For now, max 1 process at a time. Will experiement and see how much I can parallize
         self._thread_pool = QThreadPool()

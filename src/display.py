@@ -71,7 +71,7 @@ class UploadWidget(QWidget, ViewWidget):
     files_ready = pyqtSignal(list)
 
     def __init__(self, parent=None):
-        super(QWidget, self).__init__(parent)
+        super().__init__(parent)
 
         self.setAcceptDrops(True)
 
@@ -140,7 +140,7 @@ class UploadWidget(QWidget, ViewWidget):
 # Allows for horizontal layout of pages until it needs to wrap over vertically.
 class PagesLayout(QLayout):
     def __init__(self, parent=None, margin=10, hspacing=5, vspacing=5):
-        super(PagesLayout, self).__init__(parent)
+        super().__init__(parent)
 
         self._hspacing = hspacing
         self._vspacing = vspacing
@@ -182,7 +182,7 @@ class PagesLayout(QLayout):
         return self._do_layout(QRect(0, 0, width, 0), True)
 
     def setGeometry(self, rect: QRect):
-        super(PagesLayout, self).setGeometry(rect)
+        super().setGeometry(rect)
         self._do_layout(rect, False)
 
     def sizeHint(self):
@@ -238,7 +238,7 @@ class PagesWidget(QLabel):
     save = pyqtSignal(ImageModel)
 
     def __init__(self, model: ImageModel = None):
-        super(QWidget, self).__init__(None)
+        super().__init__(None)
 
         # Default size.
         self.setMinimumSize(100, int(100*constants.CROP_RATIO))
@@ -297,7 +297,7 @@ class PagesWidget(QLabel):
 
 class PageWrapperWidget(QWidget):
     def __init__(self, parent=None):
-        super(QWidget, self).__init__(parent)
+        super().__init__(parent)
 
         self.setAcceptDrops(True)
         self.setLayout(PagesLayout())
@@ -333,7 +333,7 @@ class PageWrapperWidget(QWidget):
 
 class SelPageWidget(QLabel):
     def __init__(self, parent=None):
-        super(QWidget, self).__init__(parent)
+        super().__init__(parent)
 
         self.setMinimumSize(100, 141)
         self.image = None
@@ -355,9 +355,9 @@ class ResultWidget(QWidget, ViewWidget):
     selected_model = pyqtSignal(ImageModel)
 
     def __init__(self, parent=None):
-        super(QWidget, self).__init__(parent)
+        super().__init__(parent)
 
-        self._select = SelPageWidget()
+        self.selected = SelPageWidget()
         self._pages = PageWrapperWidget()
 
         scroll_widget = QScrollArea()
@@ -382,7 +382,7 @@ class ResultWidget(QWidget, ViewWidget):
         button_layout.addWidget(mask_button)
 
         left_layout = QVBoxLayout()
-        left_layout.addWidget(self._select, Qt.AlignmentFlag.AlignCenter)
+        left_layout.addWidget(self.selected, Qt.AlignmentFlag.AlignCenter)
         left_layout.addSpacing(1)
         left_layout.addLayout(button_layout)
 
@@ -406,7 +406,7 @@ class ResultWidget(QWidget, ViewWidget):
                 self._pages.layout().clear()
                 for model in result[1]:
                     page = PagesWidget(model)
-                    page.clicked.connect(self._select.set_model)
+                    page.clicked.connect(self.selected.set_model)
                     page.delete.connect(self._delete_widget)
                     # page.save.connect()
                     self._pages.layout().addWidget(page)
@@ -431,9 +431,16 @@ class EditCropWidget(QWidget, ViewWidget):
     def __init__(self, parent=None):
         super(QWidget, self).__init__(parent)
 
+class EditCropWidget(EditWidget):
+    def __init__(self, parent=None):
+        
+        main_widget = QLabel("widget here")
+        super().__init__(main_widget=main_widget, parent=parent)
 
 ### ------------------------------------------------------------------------------ ###
 
-class EditMaskWidget(QWidget, ViewWidget):
+class EditMaskWidget(EditWidget):
     def __init__(self, parent=None):
-        super(QWidget, self).__init__(parent)
+
+        main_widget = QLabel("another one here")
+        super().__init__(main_widget=main_widget, parent=parent)
