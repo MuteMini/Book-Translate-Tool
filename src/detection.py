@@ -99,6 +99,10 @@ class DocumentLines(object):
             points.append(p)
 
         return np.array(points)
+    
+    # Gives how rectangular/most likely it is to be a document in a [0,100] scale.
+    def rectness(self) -> int:
+        pass
 
     def __str__(self):
         out = ""
@@ -107,10 +111,6 @@ class DocumentLines(object):
         return out + f"{self.lines[-1].get_list()}"
 
 class DocUtils:
-    # Exception used to tell QtObjects that the document could not be found
-    class NoDocumentDetectedError(Exception):
-        pass
-
     # Comes from https://pyimagesearch.com/2014/08/25/4-point-opencv-getperspective-transform-example
     # Sorts points into tl, tr, br, bl
     def order_point(pts) -> np.ndarray:
@@ -165,9 +165,9 @@ class DocUtils:
         img = imutils.convenience.resize(org_img.copy(), height=600)
 
         # Processes Image for Document Detection
-        kernel = np.ones((5, 5), np.uint8)
-        edges = cv2.morphologyEx(img.copy(), cv2.MORPH_CLOSE, kernel, iterations=5)
-        frame = cv2.GaussianBlur(edges, (7, 7), 3)
+        kernel = np.ones((7, 7), np.uint8)
+        edges = cv2.morphologyEx(img.copy(), cv2.MORPH_CLOSE, kernel, iterations=3)
+        frame = cv2.GaussianBlur(edges, (7, 7), 5)
         edges = cv2.addWeighted(edges, 2, frame, -1, 0)
         edges = cv2.cvtColor(edges, cv2.COLOR_BGR2GRAY)
         edges = cv2.GaussianBlur(edges, (11, 11), 0)
@@ -175,6 +175,7 @@ class DocUtils:
 
         # Processing HoughLines into the four most likely document items
         strong_lines = DocumentLines(img.shape[:2])
+        all_lines = DocumentLines(img.shape[:2])
         lines = cv2.HoughLines(edges, 1, np.pi/180, 60)
         if lines is not None:
             # Parses HoughLine space into a list of positive rho lines
@@ -183,6 +184,7 @@ class DocUtils:
 
             candid_lines = np.array([lines[0]])
             strong_lines.add_line(lines[0][0], lines[0][1])
+            all_lines.add_line(lines[0][0], lines[0][1])
 
             for line in lines[1:]:
                 rho, theta = line[0], line[1]
@@ -194,15 +196,18 @@ class DocUtils:
 
                 if not any(isclose):
                     candid_lines = np.concatenate((candid_lines, [line]))
-                    strong_lines.add_line(rho, theta)
-                    
-                    if strong_lines.document_found():
-                        break   
+                    if not strong_lines.document_found():
+                        strong_lines.add_line(rho, theta)
+                    all_lines.add_line(rho, theta)
 
-        if not strong_lines.document_found() or strong_lines.get_corners() is None:
-            raise DocUtils.NoDocumentDetectedError
+        # Instead of just using the full houghline space, we could compare the document the moment when its immediately found
+        # v.s. the one found at the end and compare it's "documentness". This may result in a better crop of the document.
 
-        return org_img, strong_lines.get_corners()*ratio
+        if not all_lines.document_found() or all_lines.get_corners() is None:
+            return org_img, np.array([(0,0), (org_img.shape[1], 0), (0, org_img.shape[0]), (org_img.shape[1], org_img.shape[0])])
+
+        corners = all_lines.get_corners() # if (strong_lines.rectness() < all_lines.rectness()) else strong_lines.get_corners()
+        return org_img, corners*ratio
 
     # Returns the mask to inpaint on the cropped image.
     def get_text_mask(img, pipeline: keras_ocr.pipeline.Pipeline):
@@ -217,11 +222,22 @@ class DocUtils:
             cv2.line(mask, DocUtils.midpoint(pos[1], pos[2]), DocUtils.midpoint(pos[0], pos[3]), 255, thickness)
         return mask
 
-    def get_resized_final(img, mask):
-        resized = cv2.inpaint(img, mask, 7, cv2.INPAINT_NS)
-        return imutils.convenience.resize(resized, height=600)
+    def get_resized_final(img, mask, height=None, width=None):
+        resized = cv2.inpaint(img, mask, 7, cv2.INPAINT_NS) if mask is not None else img
+
+        if height is None:
+            resized = imutils.convenience.resize(resized, width=width)
+        if width is None:
+            resized = imutils.convenience.resize(resized, height=height)
+        return resized
     
-    def opencv_to_pil(img, height):
-        img = imutils.convenience.resize(img, height=height)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        return Image.fromarray(img)
+    def opencv_to_pil(img):
+        return Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+
+if __name__ == '__main__':
+    path = "C:\\Users\\there\\Desktop\\New folder\\IMG_0464.jpg"
+    doc, corners = DocUtils.get_document(path)
+    crop = DocUtils.crop_document(doc, corners)
+    show = DocUtils.get_resized_final(crop, None, height=500)
+    cv2.imshow("cropped", show)
+    cv2.waitKey(0)
