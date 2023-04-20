@@ -102,7 +102,7 @@ class LoadWidget(QWidget, ViewWidget):
     # Replace test thread with full thread
     @pyqtSlot(list)
     def recieve_files(self, img_paths):
-        self.start_thread(Worker(self._run_test_thread, img_paths))
+        self.start_thread(Worker(self._run_full_thread, img_paths))
 
     @pyqtSlot(list, str, str)
     def save_files(self, img, path, type):
@@ -141,25 +141,6 @@ class LoadWidget(QWidget, ViewWidget):
         self._progress_bar.setRange(0, limit)
         self._progress_bar.setValue(progress)
 
-    # To remove function use after testing
-    def _run_test_thread(self, worker_object: Worker, img_paths):
-        worker_object.signals.progress.emit(f"Starting Process", 0, 0)
-
-        sorted(img_paths)
-        progress = 0
-        limit = len(img_paths)
-
-        result = []
-        for id, img in enumerate(img_paths):
-            worker_object.signals.progress.emit(f"Cropping Image #{id+1}", progress, limit)
-            org, corner = DocUtils.get_document(img)
-            final = DocUtils.crop_document(org, corner)
-            progress += 1
-            result.append(ImageModel(org, corner, None, final))
-
-        worker_object.signals.progress.emit("Wrapping up", progress, limit)
-        return 'inputs', result
-
     def _run_full_thread(self, worker_object: Worker, img_paths):
         worker_object.signals.progress.emit(f"Starting Process", 0, 0)
 
@@ -179,15 +160,19 @@ class LoadWidget(QWidget, ViewWidget):
             crop = DocUtils.crop_document(org, corner)
             progress += 1
 
-            worker_object.signals.progress.emit(f"Removing Text #{id+1}", progress, limit)
-            if worker_object.is_stop:
-                return None
+            # For testing purposes skips text removal
+            final = DocUtils.get_resized_final(crop, None, height=600)
+            result.append(ImageModel(org, corner, None, final))
 
-            mask = DocUtils.get_text_mask(crop, pipeline)
-            final = DocUtils.get_resized_final(crop, mask, height=600)
-            progress += 1
+            # worker_object.signals.progress.emit(f"Removing Text #{id+1}", progress, limit)
+            # if worker_object.is_stop:
+            #     return None
+
+            # mask = DocUtils.get_text_mask(crop, pipeline)
+            # final = DocUtils.get_resized_final(crop, mask, height=600)
+            # progress += 1
             
-            result.append(ImageModel(org, corner, mask, final))
+            # result.append(ImageModel(org, corner, mask, final))
             
         worker_object.signals.progress.emit("Wrapping up", progress, limit)
         K.clear_session()
