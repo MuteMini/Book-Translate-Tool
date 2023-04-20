@@ -13,8 +13,9 @@ from PyQt6.QtCore import (
     QThreadPool, QRunnable, QMutex, QMutexLocker
 )
 from PyQt6.QtWidgets import (
-    QWidget, QLabel, QProgressBar, QVBoxLayout, QMessageBox
+    QWidget, QLabel, QProgressBar, QVBoxLayout, QMessageBox,
 )   
+from PyQt6.QtGui import QImage, QPixmap
 
 # Worker Class comes from this repo: https://github.com/mochisue/pyqt-async-sample/blob/7bd6124c3c6fa8e88f792581dbfda44d7144552b/src/sample.py#L144
 # Allows for any function to be run using the QThreadPool, works perfectly for our use case of QT's asynchronous features.
@@ -62,6 +63,9 @@ class ImageModel(QObject):
         self.corner = corner
         self.tx_mask = mask
         self.final = final
+
+        h, w, ch = self.final.shape
+        self.image = QPixmap.fromImage(QImage(self.final, w, h, ch*w, QImage.Format.Format_BGR888))
 
 ### ------------------------------------------------------------------------------ ###
 

@@ -235,7 +235,7 @@ class PagesLayout(QLayout):
         self.update()
         
 class PagesWidget(QLabel):
-    clicked = pyqtSignal(ImageModel, QPixmap)
+    clicked = pyqtSignal(ImageModel)
     delete = pyqtSignal(QWidget)
     save = pyqtSignal(ImageModel)
 
@@ -257,14 +257,10 @@ class PagesWidget(QLabel):
         self.menu.addAction(save_action)
 
         self.model = model
-        self.image = None
         if self.model is not None:
-            h, w, ch = self.model.final.shape
-            self.image = QPixmap.fromImage(QImage(self.model.final, w, h, ch*w, QImage.Format.Format_BGR888))
-            self.setPixmap(self.image)
+            self.setPixmap(self.model.image)      
 
     def __del__(self):
-        del self.image
         del self.model
 
     def contextMenuEvent(self, e):
@@ -272,7 +268,7 @@ class PagesWidget(QLabel):
 
     def mousePressEvent(self, e: QMouseEvent):
         if e.buttons() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(self.model, self.pixmap())
+            self.clicked.emit(self.model)
             e.accept()
         else:
             e.ignore()
@@ -282,7 +278,7 @@ class PagesWidget(QLabel):
             drag = QDrag(self)
             drag.setMimeData(QMimeData())
 
-            scaled = self.image.scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            scaled = self.model.image.scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             icon = QImage(scaled.size(), QImage.Format.Format_ARGB32_Premultiplied)
             icon.fill(Qt.GlobalColor.transparent)
             painter = QPainter(icon)
@@ -338,18 +334,16 @@ class SelPageWidget(QLabel):
         super().__init__(parent)
 
         self.setMinimumSize(100, 141)
-        self.image = None
         self.model = None
 
     def resizeEvent(self, e):
-        if self.image is not None:
-            self.setPixmap(self.image.scaled(self.size(), 
-                                            Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        if self.model is None:
+            return
+        self.setPixmap(self.model.image.scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
 
-    def set_model(self, model: ImageModel, img: QPixmap):
+    def set_model(self, model: ImageModel):
         if model is not None:
             self.model = model
-            self.image = img
             self.resizeEvent(None)
 
 class ResultWidget(QWidget, ViewWidget):
@@ -428,11 +422,12 @@ class ResultWidget(QWidget, ViewWidget):
 
 ### ------------------------------------------------------------------------------ ###
 
+# To not be initiated: only be used as a base class for the edit widget subtypes.
 class EditWidget(QWidget, ViewWidget):
     def __init__(self, main_widget=None, parent=None):
         super().__init__(parent)
 
-        self.model = None
+        self._model = None
 
         edit_button = QPushButton("Save Edit")
         edit_button.clicked.connect(self._save_edit)
@@ -443,24 +438,46 @@ class EditWidget(QWidget, ViewWidget):
         button_layout.addWidget(exit_button)
         button_layout.addWidget(edit_button)
 
+        edit_layout = QHBoxLayout()
+        edit_layout.addWidget(main_widget)
+
         main_layout = QVBoxLayout(self)
-        main_layout.addWidget(main_widget, 2)
+        main_layout.addLayout(edit_layout, 2)
         main_layout.addLayout(button_layout, 1)
 
-    # To be implemented by the other edit widgets
+    @property
+    def model(self):
+        return self._model
+    
+    @model.setter
+    def model(self, value):
+        if not isinstance(value, ImageModel):
+            return
+        self._model = value
+        self._update_edit(self._model.image)
+
+    def _update_edit(self, image):
+        raise NotImplemented("_update_edit was not overwritten.")
+
     def _save_edit(self):
-        pass
+        raise NotImplemented("_save_edit was not overwritten.")
 
 class EditCropWidget(EditWidget):
     def __init__(self, parent=None):
-        
-        main_widget = QLabel("widget here")
+        main_widget = QLabel("another one here")
+
         super().__init__(main_widget=main_widget, parent=parent)
+
+    def _update_edit(self, image):
+        pass
+
+    def _save_edit(self):
+        pass
 
 ### ------------------------------------------------------------------------------ ###
 
 class EditMaskWidget(EditWidget):
     def __init__(self, parent=None):
-
         main_widget = QLabel("another one here")
+
         super().__init__(main_widget=main_widget, parent=parent)
