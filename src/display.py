@@ -37,8 +37,8 @@ class MainWindow(QMainWindow):
         self.mask_widget.swap.connect(self._set_view)
 
         self.upload_widget.files_ready.connect(self.load_widget.recieve_files)
-        self.load_widget.result_ready.connect(
-            self.result_widget.recieve_result)
+
+        self.load_widget.result_ready.connect(self.result_widget.recieve_result)
 
         self.result_widget.save_file.connect(self.load_widget.save_files)
 
@@ -63,8 +63,10 @@ class MainWindow(QMainWindow):
             case View.RESULT:
                 self.stack_layout.setCurrentWidget(self.result_widget)
             case View.EDIT_CROP:
+                self.crop_widget.model = self.result_widget.selected.model
                 self.stack_layout.setCurrentWidget(self.crop_widget)
             case View.EDIT_MASK:
+                self.mask_widget.model = self.result_widget.selected.model
                 self.stack_layout.setCurrentWidget(self.mask_widget)
 
 class UploadWidget(QWidget, ViewWidget):
@@ -352,7 +354,6 @@ class SelPageWidget(QLabel):
 
 class ResultWidget(QWidget, ViewWidget):
     save_file = pyqtSignal(list, str, str)
-    selected_model = pyqtSignal(ImageModel)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -427,9 +428,28 @@ class ResultWidget(QWidget, ViewWidget):
 
 ### ------------------------------------------------------------------------------ ###
 
-class EditCropWidget(QWidget, ViewWidget):
-    def __init__(self, parent=None):
-        super(QWidget, self).__init__(parent)
+class EditWidget(QWidget, ViewWidget):
+    def __init__(self, main_widget=None, parent=None):
+        super().__init__(parent)
+
+        self.model = None
+
+        edit_button = QPushButton("Save Edit")
+        edit_button.clicked.connect(self._save_edit)
+        exit_button = QPushButton("Return")
+        exit_button.clicked.connect(lambda: self.swap.emit(View.RESULT))
+
+        button_layout = QHBoxLayout()
+        button_layout.addWidget(exit_button)
+        button_layout.addWidget(edit_button)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.addWidget(main_widget, 2)
+        main_layout.addLayout(button_layout, 1)
+
+    # To be implemented by the other edit widgets
+    def _save_edit(self):
+        pass
 
 class EditCropWidget(EditWidget):
     def __init__(self, parent=None):
