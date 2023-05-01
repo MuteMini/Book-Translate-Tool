@@ -209,7 +209,7 @@ class DocUtils:
         return mask
     
     def resized_final(image, mask, height=None, width=None):
-        resized = cv2.inpaint(image, mask, 7, cv2.INPAINT_NS) if mask is not None else img
+        resized = cv2.inpaint(image, mask, 7, cv2.INPAINT_NS) if mask is not None else image
 
         if height is None:
             resized = imutils.convenience.resize(resized, width=width)
