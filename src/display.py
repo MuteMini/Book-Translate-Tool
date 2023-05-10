@@ -360,7 +360,7 @@ class ResultWidget(QWidget, ViewWidget):
         scroll_widget.setWidget(self._pages)
 
         compile_button = QPushButton("Compile")
-        compile_button.clicked.connect(self._merge_files)
+        compile_button.clicked.connect(lambda: self._save_model_as(self._pages.list_models(), "PDF (*.pdf)"))
 
         right_layout = QVBoxLayout()
         right_layout.addWidget(scroll_widget)
@@ -388,11 +388,11 @@ class ResultWidget(QWidget, ViewWidget):
         main_layout.addWidget(left_group, 1)
         main_layout.addLayout(right_layout, 2)
 
-    def _merge_files(self):
-        save_name = QFileDialog.getSaveFileName(self, "Save file", 'c:\\', f"PDF (*.pdf)")
+    def _save_model_as(self, models, file_type):
+        save_name = QFileDialog.getSaveFileName(self, "Save file", 'c:\\', file_type)
         if save_name[0] == "":
             return
-        self.save_file.emit(self._pages.list_models(), save_name[0], save_name[1])
+        self.save_file.emit([models], save_name[0], save_name[1].split(' ')[0])
         self.swap.emit(View.LOAD)
 
     def recieve_result(self, result):
@@ -403,7 +403,7 @@ class ResultWidget(QWidget, ViewWidget):
                     page = PagesWidget(model)
                     page.clicked.connect(self.selected.set_model)
                     page.delete.connect(self._delete_widget)
-                    # page.save.connect()
+                    page.save.connect(lambda model: self._save_model_as(model, "PNG (*.png)"))
                     self._pages.layout().addWidget(page)
             case 'editcrop':
                 pass

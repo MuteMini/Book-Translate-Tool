@@ -130,12 +130,16 @@ class LoadWidget(QWidget, ViewWidget):
         
         self.worker = None
         
-        if result[0] == 'final':
-            QMessageBox.about(self, "Alert", "File Saved!")
-            self.swap.emit(View.UPLOAD)
-        else:
-            self.result_ready.emit(result)
-            self.swap.emit(View.RESULT)
+        match result[0]:
+            case 'final':
+                QMessageBox.about(self, "Alert", "File Saved!")
+                self.swap.emit(View.UPLOAD)
+            case 'singlesave':
+                QMessageBox.about(self, "Alert", "Image Saved!")
+                self.swap.emit(View.RESULT)
+            case _:
+                self.result_ready.emit(result)
+                self.swap.emit(View.RESULT)
 
     def _finish_thread(self):
         self._thread_pool.waitForDone()
@@ -200,10 +204,10 @@ class LoadWidget(QWidget, ViewWidget):
             progress += 1
 
         # Could be reused to save as multiple different types
-        pil_img[0].save(path, "PDF", resolution=100.0, save_all=True, append_images=pil_img[1:])
+        pil_img[0].save(path, type, resolution=100.0, save_all=True, append_images=pil_img[1:])
 
         worker_object.signals.progress.emit("Done", 1, 1)
-        return 'final', None
+        return 'final' if type == "PDF" else "singlesave", None
 
     def _run_crop_thread(self, worker_object):
         pass
