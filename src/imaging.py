@@ -160,20 +160,20 @@ class LoadWidget(QWidget, ViewWidget):
             if worker_object.is_stop:
                 return None
             
-            org, corner = DocUtils.get_document(img)
+            org, corner = DocUtils.find_document(img)
             crop = DocUtils.crop_document(org, corner)
             progress += 1
 
             # For testing purposes skips text removal
-            final = DocUtils.get_resized_final(crop, None, height=600)
+            final = DocUtils.resized_final(crop, None, height=600)
             result.append(ImageModel(org, corner, None, final))
 
             # worker_object.signals.progress.emit(f"Removing Text #{id+1}", progress, limit)
             # if worker_object.is_stop:
             #     return None
 
-            # mask = DocUtils.get_text_mask(crop, pipeline)
-            # final = DocUtils.get_resized_final(crop, mask, height=600)
+            # mask = DocUtils.text_mask(crop, pipeline)
+            # final = DocUtils.resized_final(crop, mask, height=600)
             # progress += 1
             
             # result.append(ImageModel(org, corner, mask, final))
@@ -195,7 +195,7 @@ class LoadWidget(QWidget, ViewWidget):
                 return None
             
             crop = DocUtils.crop_document(model.org, model.corner)
-            final = DocUtils.get_resized_final(crop, model.tx_mask, width=1000)
+            final = DocUtils.resized_final(crop, model.tx_mask, width=1000)
             pil_img.append(DocUtils.opencv_to_pil(final))
             progress += 1
 

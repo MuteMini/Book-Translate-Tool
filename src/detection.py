@@ -28,12 +28,6 @@ class Line(object):
         y = (self.cos*other.rho - other.cos*self.rho)/d
         return (int(x), int(y))
     
-    def list(self):
-        return [self.rho, self.t]
-    
-    def trig(self):
-        return [self.cos, self.sin]
-    
 class Document(object):
     # i and i+1 index represents min rho line near similar theta lines.
     def __init__(self, shape: tuple[int,int]):
@@ -42,6 +36,8 @@ class Document(object):
 
     def add_line(self, rho, theta):
         line = Line(rho, theta)
+        new_index = -1
+        new_lines = [None for _ in range(len(self.lines))]
 
         for i in range(0, len(self.lines), 2):
             if self.lines[i] is None:
@@ -57,45 +53,25 @@ class Document(object):
                     self.lines[i] = line
                 else:
                     self.lines[i+1] = line
-            
-            self.lines[i] = line if self.lines[i] > line else self.lines[i]
-            self.lines[i+1] = line if line > self.lines[i+1] else self.lines[i+1] 
+            else:
+                self.lines[i] = line if self.lines[i] > line else self.lines[i]
+                self.lines[i+1] = line if line > self.lines[i+1] else self.lines[i+1]
             break
 
     def document_found(self):
         return self.lines[1] is not None and self.lines[3] is not None
-    
-    def lines(self):
-        return [line.list() for line in self.lines if isinstance(line, Line)]
 
-    def trigs(self):
-        return [line.trig() for line in self.lines if isinstance(line, Line)]
-
-    def corners(self) -> np.ndarray:
+    def corners(self, this_bound=None) -> np.ndarray:
         points = []
+        lines = self.lines if this_bound is None else this_bound
 
         for i in range(4): 
-            p = self.lines[i//2].get_intersection(self.lines[i%2 + 2])
-
+            p = lines[i//2].intersection(lines[i%2 + 2])
             if p is None or (0, 0) > p > (self.width, self.height):
                 return None
             points.append(p)
-
         return points
-
-    # Temporary testing function to be replaced with drawing on pyQT objects
-    def draw_lines(self, img):
-        for n, line in enumerate(self.lines):
-            if isinstance(line, Line):
-                x0 = line.cos*line.rho
-                y0 = line.sin*line.rho
-                x1 = int(x0 + 1000*(-line.sin))
-                y1 = int(y0 + 1000*(line.cos))
-                x2 = int(x0 - 1000*(-line.sin))
-                y2 = int(y0 - 1000*(line.cos))
-                r, g, b = colorsys.hsv_to_rgb(n*0.1, 0.8, 1)
-                cv2.line(img, (x1, y1), (x2, y2), (b*225, g*225, r*225), 2)
-
+    
 class DocUtils:
     # Comes from https://pyimagesearch.com/2014/08/25/4-point-opencv-getperspective-transform-example
     # Sorts points into tl, tr, br, bl
@@ -145,25 +121,24 @@ class DocUtils:
         ratio = original.shape[0] / 600
 
         image = imutils.convenience.resize(original.copy(), height=600)
+        edges = image.copy()
 
         # Image processing for HoughLine
-        kernel = np.ones((7,7), np.uint8)
-        edges = cv2.morphologyEx(image.copy(), cv2.MORPH_CLOSE, kernel, iterations=3)
-        cv2.imshow("test", edges)
-        cv2.waitKey(0)
+        # edges = cv2.fastNlMeansDenoising(edges, h=7)
+        kernel = np.ones((5,5), np.uint8)
+        edges = cv2.morphologyEx(image.copy(), cv2.MORPH_CLOSE, kernel, iterations=1)
         frame = cv2.GaussianBlur(edges, (7,7), 5)
-        edges = cv2.addWeighted(edges, 2, frame, -1, 0)
-        cv2.imshow("test", edges)
-        cv2.waitKey(0)
-        edges = cv2.cvtColor(edges, cv2.COLOR_BGR2GRAY)
-        edges = cv2.GaussianBlur(edges, (11, 11), 0)
-        edges = cv2.Canny(edges, 0, 100, apertureSize=3)
-        cv2.imshow("test", edges)
-        cv2.waitKey(0)
+        edges = cv2.addWeighted(edges, 2.5, frame, -1.5, 0)
+        edges = cv2.GaussianBlur(edges, (7,7), 0)
+
+        # From https://stackoverflow.com/questions/41893029/opencv-canny-edge-detection-not-working-properly
+        v = np.median(edges)
+        lower = int(max(0, (1.0 - constants.CANNY_SIGMA)*v))
+        upper = int(min(255, (1.0 + constants.CANNY_SIGMA)*v))
+        edges = cv2.Canny(edges, lower, upper, apertureSize=3)
 
         # Processing HoughLines to find most likely document lines
         strong_lines = Document(image.shape[:2])
-
         lines = cv2.HoughLines(edges, 1, np.pi/180, 60)
         if lines is not None:
             # Turns all lines into positive rho
@@ -185,12 +160,9 @@ class DocUtils:
                     candids = np.concatenate((candids, [line]))
                     strong_lines.add_line(rho, theta)
 
-                if strong_lines.document_found():
-                    break
-
-        corners = strong_lines.corners()
-        if corners is None or not strong_lines.document_found():
-            corners = np.array([(0,0), (original.shape[1], 0), (0, original.shape[0]), (original.shape[1], original.shape[0])])
+        corners = np.array([(0,0), (original.shape[1], 0), (0, original.shape[0]), (original.shape[1], original.shape[0])])
+        if strong_lines.document_found() and strong_lines.corners() is not None:
+            corners = np.multiply(strong_lines.corners(), ratio)
 
         return original, corners
     
@@ -200,7 +172,7 @@ class DocUtils:
         prediction_image = imutils.convenience.resize(image.copy(), height=1200)
         prediction_data = pipeline.recognize([prediction_image])
 
-        mask = np.zeroes(image.shape[:2], dtype='uint8')
+        mask = np.zeros(image.shape[:2], dtype='uint8')
         for box in prediction_data[0]:
             bounds = box[1]
             pos = [(bounds[i][0]*ratio, bounds[i][1]*ratio) for i in range(4)]
@@ -219,11 +191,3 @@ class DocUtils:
     
     def opencv_to_pil(image):
         return Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-    
-if __name__ == '__main__':
-    path = "C:\\Users\\there\\Desktop\\New folder\\IMG_0464.jpg"
-    doc, corners = DocUtils.get_document(path)
-    crop = DocUtils.crop_document(doc, corners)
-    show = DocUtils.get_resized_final(crop, None, height=500)
-    cv2.imshow("cropped", show)
-    cv2.waitKey(0)
