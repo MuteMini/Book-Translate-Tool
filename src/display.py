@@ -3,7 +3,7 @@ from imaging import LoadWidget, ImageModel
 import constants
 
 from PyQt6.QtCore import (
-    Qt, pyqtSignal, QMimeData, QFileInfo, QRect, QPoint, QSize
+    Qt, pyqtSignal, QMimeData, QFileInfo, QRect, QPoint, QPointF, QSize
 )
 from PyQt6.QtWidgets import (
     QWidget, QLabel, QPushButton, QMenu, QFileDialog, QStyle, QMainWindow, QMessageBox,
@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import (
     QDrag, QDragMoveEvent, QDropEvent, QMouseEvent, QAction,
-    QImage, QPixmap, QPainter
+    QImage, QPixmap, QPainter, QColor, QBrush
 )
 
 class MainWindow(QMainWindow):
@@ -328,16 +328,25 @@ class SelPageWidget(QLabel):
 
         self.setMinimumSize(100, 141)
         self._model = None
+        self._show_org = show_org
+
+    @property
+    def model(self):
+        return self._model
+    
+    @model.setter
+    def model(self, m: ImageModel):
+        if m is not None:
+            self._model = m
+            self.resizeEvent(None)
 
     def resizeEvent(self, e):
         if self._model is None:
             return
-        self.setPixmap(self.model.image.scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         
+        image = self._model.orig_pix if self._show_org else self._model.final_pix
 
-    def set_model(self, model: ImageModel):
-            self.model = model
-            self.resizeEvent(None)
+        self.setPixmap(image.scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
 
 class ResultWidget(QWidget, ViewWidget):
     save_file = pyqtSignal(list, str, str)
@@ -360,7 +369,6 @@ class ResultWidget(QWidget, ViewWidget):
         right_layout.addWidget(compile_button)
 
         crop_button = QPushButton("Recrop")
-        mask_button.clicked.connect(lambda: self.swap.emit(View.EDIT_MASK))
         crop_button.clicked.connect(self._select_recrop)
 
         button_layout = QHBoxLayout()
@@ -393,7 +401,6 @@ class ResultWidget(QWidget, ViewWidget):
                     page = PagesWidget(model)
                     page.clicked.connect(self._select_model)
                     page.delete.connect(self._delete_widget)
-                    page.save.connect(lambda model: self._save_model_as(model, "PNG (*.png)"))
                     page.save.connect(lambda m: self._save_model_as(m, "PNG (*.png)"))
                     self._pages.layout().addWidget(page)
             case 'editcrop':
@@ -403,6 +410,11 @@ class ResultWidget(QWidget, ViewWidget):
 
     def _select_model(self, m: ImageModel):
         self.selected.model = m
+
+    def _select_recrop(self):
+        if self._select_model is not None:
+            self.swap.emit(View.EDIT_CROP)
+
     def _delete_widget(self, widget: QWidget):
         widget.deleteLater()
         self._pages.layout().removeWidget(widget)

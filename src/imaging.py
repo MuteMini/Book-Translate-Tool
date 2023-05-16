@@ -57,15 +57,17 @@ class Worker(QRunnable):
 class ImageModel(QObject):
     content_changed = pyqtSignal(str)
 
-    def __init__(self, org, corner, mask, final, parent=None):
+    def __init__(self, orig, corner, mask, final, parent=None):
         super().__init__(parent)
-        self.org = org
+        self.orig = orig
         self.corner = corner
         self.tx_mask = mask
-        self.final = final
 
-        h, w, ch = self.final.shape
-        self.image = QPixmap.fromImage(QImage(self.final, w, h, ch*w, QImage.Format.Format_BGR888))
+        h, w, ch = final.shape
+        self.final_pix = QPixmap.fromImage(QImage(final, w, h, ch*w, QImage.Format.Format_BGR888))
+
+        h, w, ch = orig.shape
+        self.orig_pix = QPixmap.fromImage(QImage(orig, w, h, ch*w, QImage.Format.Format_BGR888))
 
 ### ------------------------------------------------------------------------------ ###
 
@@ -164,13 +166,13 @@ class LoadWidget(QWidget, ViewWidget):
             if worker_object.is_stop:
                 return None
             
-            org, corner = DocUtils.find_document(img)
-            crop = DocUtils.crop_document(org, corner)
+            orig, corner = DocUtils.find_document(img)
+            crop = DocUtils.crop_document(orig, corner)
             progress += 1
 
             # For testing purposes skips text removal
             final = DocUtils.resized_final(crop, None, height=600)
-            result.append(ImageModel(org, corner, None, final))
+            result.append(ImageModel(orig, corner, None, final))
 
             # worker_object.signals.progress.emit(f"Removing Text #{id+1}", progress, limit)
             # if worker_object.is_stop:
@@ -180,7 +182,7 @@ class LoadWidget(QWidget, ViewWidget):
             # final = DocUtils.resized_final(crop, mask, height=600)
             # progress += 1
             
-            # result.append(ImageModel(org, corner, mask, final))
+            # result.append(ImageModel(orig, corner, mask, final))
             
         worker_object.signals.progress.emit("Wrapping up", progress, limit)
         K.clear_session()
