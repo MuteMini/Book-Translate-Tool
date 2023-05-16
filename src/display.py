@@ -412,7 +412,7 @@ class ResultWidget(QWidget, ViewWidget):
         self.selected.model = m
 
     def _select_recrop(self):
-        if self._select_model is not None:
+        if self.selected.model is not None:
             self.swap.emit(View.EDIT_CROP)
 
     def _delete_widget(self, widget: QWidget):
@@ -478,48 +478,58 @@ class CropWidget(QLabel):
         self._w, self._h = 0, 0
 
     def update_model(self, m: ImageModel):
-        self._dots = m.corner
+        self._dots = []
         self._h, self._w = m.orig.shape[:2]
+
+        for x, y in m.corner: 
+            self._dots.append(QPointF(x, y))
 
     def mouseMoveEvent(self, e: QMouseEvent):
         if e.buttons() == Qt.MouseButton.LeftButton:
-            if self._hover_index != -1:
-                px, py = e.pos().x(), e.pos().y()
-                self._dots[self._hover_index] = self._canvas_to_dot(px, py)
-                self.repaint()
+            if self._hover_index == -1:
+                return
+            if e.position().x() < 0 or e.position().x() > self.width():
+                return
+            if e.position().y() < 0 or e.position().y() > self.height():
+                return
+
+            self._dots[self._hover_index] = self._canvas_to_dot(e.position())
+            self.repaint()
         else:
             new_id = -1
-            for id in range(len(self._dots)):
-                if id != 0: 
-                    break
-                px, py = self._dot_to_canvas(self._dots[id][0], self._dots[id][1])
-                dot_pos = QPoint(int(px), int(py)) - e.pos()
-                print(id, dot_pos.manhattanLength())
-                if dot_pos.manhattanLength() < 4:
+            for id, point in enumerate(self._dots):
+                dot_pos = self._dot_to_canvas(point) - e.position()
+
+                if dot_pos.manhattanLength() < 6:
                     new_id = id
                     break
             self._hover_index = new_id
         self.repaint()
         e.accept()
 
-    def mouseReleaseEvent(self, e):
-        pass
-
     def paintEvent(self, e):
         super().paintEvent(e)
 
         painter = QPainter()
         painter.begin(self)
+        painter.setPen(QColor(255, 0, 0))
 
-        for id, (x, y) in enumerate(self._dots):
-            px, py = self._dot_to_canvas(x, y)
-            color = QColor(0, 0, 255) if self._hover_index == id else QColor(255, 0, 0)
+        polyline = []
+
+        for id, point in enumerate(self._dots):
+            color = QColor(0, 0, 255) if self._hover_index == id else QColor(255, 100, 100)
             painter.setBrush(QBrush(color, Qt.BrushStyle.SolidPattern))
-            painter.drawEllipse(QPointF(px, py), 5, 5)
+            painter.drawEllipse(self._dot_to_canvas(point), 5, 5)
+            polyline.append(self._dot_to_canvas(point))
+
+        polyline[2], polyline[3] = polyline[3], polyline[2]
+        polyline.append(polyline[0])
+        
+        painter.drawPolyline(polyline)
         painter.end()
 
-    def _dot_to_canvas(self, x, y):
-        return x/self._w*self.width(), y/self._h*self.height()
+    def _canvas_to_dot(self, p: QPointF):
+        return QPointF(p.x()/self.width()*self._w, p.y()/self.height()*self._h)
     
-    def _canvas_to_dot(self, px, py):
-        return px*self.width()/self._w, py*self.height()/self._h
+    def _dot_to_canvas(self, p: QPointF):
+        return QPointF(p.x()/self._w*self.width(), p.y()/self._h*self.height())
