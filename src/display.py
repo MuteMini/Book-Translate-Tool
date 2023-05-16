@@ -28,13 +28,11 @@ class MainWindow(QMainWindow):
         self.load_widget = LoadWidget()
         self.result_widget = ResultWidget()
         self.crop_widget = EditCropWidget()
-        self.mask_widget = EditMaskWidget()
 
         self.upload_widget.swap.connect(self._set_view)
         self.load_widget.swap.connect(self._set_view)
         self.result_widget.swap.connect(self._set_view)
         self.crop_widget.swap.connect(self._set_view)
-        self.mask_widget.swap.connect(self._set_view)
 
         self.upload_widget.files_ready.connect(self.load_widget.recieve_files)
 
@@ -47,7 +45,6 @@ class MainWindow(QMainWindow):
         self.stack_layout.addWidget(self.load_widget)
         self.stack_layout.addWidget(self.result_widget)
         self.stack_layout.addWidget(self.crop_widget)
-        self.stack_layout.addWidget(self.mask_widget)
 
         container = QWidget()
         container.setLayout(self.stack_layout)
@@ -65,9 +62,6 @@ class MainWindow(QMainWindow):
             case View.EDIT_CROP:
                 self.crop_widget.model = self.result_widget.selected.model
                 self.stack_layout.setCurrentWidget(self.crop_widget)
-            case View.EDIT_MASK:
-                self.mask_widget.model = self.result_widget.selected.model
-                self.stack_layout.setCurrentWidget(self.mask_widget)
 
 class UploadWidget(QWidget, ViewWidget):
     files_ready = pyqtSignal(list)
@@ -90,8 +84,7 @@ class UploadWidget(QWidget, ViewWidget):
         button_layout.addWidget(self._button)
 
         grid_layout = QGridLayout(self)
-        grid_layout.addWidget(self._upload_icon, 0, 0,
-                              Qt.AlignmentFlag.AlignHCenter)
+        grid_layout.addWidget(self._upload_icon, 0, 0, Qt.AlignmentFlag.AlignHCenter)
         grid_layout.addLayout(button_layout, 1, 0)
 
     def dragEnterEvent(self, e: QDragMoveEvent):
@@ -258,7 +251,7 @@ class PagesWidget(QLabel):
 
         self.model = model
         if self.model is not None:
-            self.setPixmap(self.model.image)      
+            self.setPixmap(self.model.final_pix)      
 
     def __del__(self):
         del self.model
@@ -278,7 +271,7 @@ class PagesWidget(QLabel):
             drag = QDrag(self)
             drag.setMimeData(QMimeData())
 
-            scaled = self.model.image.scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            scaled = self.model.final_pix.scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             icon = QImage(scaled.size(), QImage.Format.Format_ARGB32_Premultiplied)
             icon.fill(Qt.GlobalColor.transparent)
             painter = QPainter(icon)
@@ -330,19 +323,19 @@ class PageWrapperWidget(QWidget):
         return list
 
 class SelPageWidget(QLabel):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, show_org=False):
         super().__init__(parent)
 
         self.setMinimumSize(100, 141)
-        self.model = None
+        self._model = None
 
     def resizeEvent(self, e):
-        if self.model is None:
+        if self._model is None:
             return
         self.setPixmap(self.model.image.scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        
 
     def set_model(self, model: ImageModel):
-        if model is not None:
             self.model = model
             self.resizeEvent(None)
 
@@ -367,14 +360,11 @@ class ResultWidget(QWidget, ViewWidget):
         right_layout.addWidget(compile_button)
 
         crop_button = QPushButton("Recrop")
-        crop_button.clicked.connect(lambda: self.swap.emit(View.EDIT_CROP))
-        mask_button = QPushButton("Remask")
         mask_button.clicked.connect(lambda: self.swap.emit(View.EDIT_MASK))
+        crop_button.clicked.connect(self._select_recrop)
 
         button_layout = QHBoxLayout()
         button_layout.addWidget(crop_button)
-        button_layout.addSpacing(1)
-        button_layout.addWidget(mask_button)
 
         left_layout = QVBoxLayout()
         left_layout.addWidget(self.selected, Qt.AlignmentFlag.AlignCenter)
@@ -401,17 +391,18 @@ class ResultWidget(QWidget, ViewWidget):
                 self._pages.layout().clear()
                 for model in result[1]:
                     page = PagesWidget(model)
-                    page.clicked.connect(self.selected.set_model)
+                    page.clicked.connect(self._select_model)
                     page.delete.connect(self._delete_widget)
                     page.save.connect(lambda model: self._save_model_as(model, "PNG (*.png)"))
+                    page.save.connect(lambda m: self._save_model_as(m, "PNG (*.png)"))
                     self._pages.layout().addWidget(page)
             case 'editcrop':
-                pass
-            case 'editmask':
                 pass
             case _:
                 print("should not reach here")
 
+    def _select_model(self, m: ImageModel):
+        self.selected.model = m
     def _delete_widget(self, widget: QWidget):
         widget.deleteLater()
         self._pages.layout().removeWidget(widget)
@@ -422,12 +413,12 @@ class ResultWidget(QWidget, ViewWidget):
 
 ### ------------------------------------------------------------------------------ ###
 
-# To not be initiated: only be used as a base class for the edit widget subtypes.
-class EditWidget(QWidget, ViewWidget):
-    def __init__(self, main_widget=None, parent=None):
+class EditCropWidget(QWidget, ViewWidget):
+    def __init__(self, parent=None):
         super().__init__(parent)
 
-        self._model = None
+        self._model_widget = SelPageWidget(show_org=True)
+        self._main_widget = CropWidget()
 
         edit_button = QPushButton("Save Edit")
         edit_button.clicked.connect(self._save_edit)
@@ -438,46 +429,85 @@ class EditWidget(QWidget, ViewWidget):
         button_layout.addWidget(exit_button)
         button_layout.addWidget(edit_button)
 
+        stack_layout = QStackedLayout()
+        stack_layout.setStackingMode(QStackedLayout.StackingMode.StackAll)
+        stack_layout.addWidget(self._model_widget)
+        stack_layout.addWidget(self._main_widget)
+
         edit_layout = QHBoxLayout()
-        edit_layout.addWidget(main_widget)
+        edit_layout.addStretch()
+        edit_layout.addLayout(stack_layout)
+        edit_layout.addStretch()
 
         main_layout = QVBoxLayout(self)
         main_layout.addLayout(edit_layout, 2)
         main_layout.addLayout(button_layout, 1)
-
+       
     @property
     def model(self):
-        return self._model
+        return self._model_widget.model
     
     @model.setter
-    def model(self, value):
-        if not isinstance(value, ImageModel):
-            return
-        self._model = value
-        self._update_edit(self._model.image)
-
-    def _update_edit(self, image):
-        raise NotImplemented("_update_edit was not overwritten.")
-
-    def _save_edit(self):
-        raise NotImplemented("_save_edit was not overwritten.")
-
-class EditCropWidget(EditWidget):
-    def __init__(self, parent=None):
-        main_widget = QLabel("another one here")
-
-        super().__init__(main_widget=main_widget, parent=parent)
-
-    def _update_edit(self, image):
-        pass
+    def model(self, m: ImageModel):
+        self._main_widget.update_model(m)
+        self._model_widget.model = m
 
     def _save_edit(self):
         pass
 
-### ------------------------------------------------------------------------------ ###
-
-class EditMaskWidget(EditWidget):
+class CropWidget(QLabel):
     def __init__(self, parent=None):
-        main_widget = QLabel("another one here")
+        super().__init__(parent)
 
-        super().__init__(main_widget=main_widget, parent=parent)
+        self.setMouseTracking(True)
+
+        self._dots = []
+        self._hover_index = -1
+        self._w, self._h = 0, 0
+
+    def update_model(self, m: ImageModel):
+        self._dots = m.corner
+        self._h, self._w = m.orig.shape[:2]
+
+    def mouseMoveEvent(self, e: QMouseEvent):
+        if e.buttons() == Qt.MouseButton.LeftButton:
+            if self._hover_index != -1:
+                px, py = e.pos().x(), e.pos().y()
+                self._dots[self._hover_index] = self._canvas_to_dot(px, py)
+                self.repaint()
+        else:
+            new_id = -1
+            for id in range(len(self._dots)):
+                if id != 0: 
+                    break
+                px, py = self._dot_to_canvas(self._dots[id][0], self._dots[id][1])
+                dot_pos = QPoint(int(px), int(py)) - e.pos()
+                print(id, dot_pos.manhattanLength())
+                if dot_pos.manhattanLength() < 4:
+                    new_id = id
+                    break
+            self._hover_index = new_id
+        self.repaint()
+        e.accept()
+
+    def mouseReleaseEvent(self, e):
+        pass
+
+    def paintEvent(self, e):
+        super().paintEvent(e)
+
+        painter = QPainter()
+        painter.begin(self)
+
+        for id, (x, y) in enumerate(self._dots):
+            px, py = self._dot_to_canvas(x, y)
+            color = QColor(0, 0, 255) if self._hover_index == id else QColor(255, 0, 0)
+            painter.setBrush(QBrush(color, Qt.BrushStyle.SolidPattern))
+            painter.drawEllipse(QPointF(px, py), 5, 5)
+        painter.end()
+
+    def _dot_to_canvas(self, x, y):
+        return x/self._w*self.width(), y/self._h*self.height()
+    
+    def _canvas_to_dot(self, px, py):
+        return px*self.width()/self._w, py*self.height()/self._h
