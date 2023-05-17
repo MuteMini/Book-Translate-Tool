@@ -29,7 +29,7 @@ if __name__ == '__main__':
     window = MainWindow()
     window.resize(max_size)
     window.setWindowTitle('Book Wiper')
-    window.setWindowIcon(QIcon('icon.png'))
+    window.setWindowIcon(QIcon('icon.ico'))
     window.show()
 
     sys.exit(app.exec())
