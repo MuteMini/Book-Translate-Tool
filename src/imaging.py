@@ -55,7 +55,7 @@ class Worker(QRunnable):
             self.is_stop = True
 
 class ImageModel(QObject):
-    content_changed = pyqtSignal(str)
+    content_changed = pyqtSignal()
 
     def __init__(self, orig, corner, mask, final, parent=None):
         super().__init__(parent)

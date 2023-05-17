@@ -253,7 +253,8 @@ class PagesWidget(QLabel):
 
         self.model = model
         if self.model is not None:
-            self.setPixmap(self.model.final_pix)      
+            self.model.content_changed.connect(lambda: self.setPixmap(self.model.final_pix))
+            self.setPixmap(self.model.final_pix)
 
     def __del__(self):
         del self.model
@@ -340,14 +341,13 @@ class SelPageWidget(QLabel):
     def model(self, m: ImageModel):
         if m is not None:
             self._model = m
+            self._model.content_changed.connect(lambda: self.resizeEvent(None))
             self.resizeEvent(None)
 
     def resizeEvent(self, e):
         if self._model is None:
             return
-        
         image = self._model.orig_pix if self._show_org else self._model.final_pix
-
         self.setPixmap(image.scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
 
 class ResultWidget(QWidget, ViewWidget):
@@ -406,7 +406,8 @@ class ResultWidget(QWidget, ViewWidget):
                     page.save.connect(lambda m: self._save_model_as(m, "PNG (*.png)"))
                     self._pages.layout().addWidget(page)
             case 'recrop':
-                self._pages.layout().update()
+                print("I am updaing layout!")
+                self.selected.model.content_changed.emit()
             case _:
                 pass
 
