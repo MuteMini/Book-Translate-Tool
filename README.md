@@ -1,11 +1,9 @@
 # Book Translate Tool
 Personal python tool to turn images of non-english books into an easily translatable base-slate pdf.
 
-## Installing Package
-Run ```pip install requirements.txt``` to install all modules.
+## Installing Program
+First, clone the repository into a folder of your choice. Run this on a Python greater than 3.11.
 
-Go into the src directory and run ```python main.py```. The app should immediately open in a new window.
+Perform ```pip install requirements.txt``` in the src file to install all modules.
 
-## Running Release
-
-So far, only Windows 64-bit OS is supported, as I used PyInstaller to form the python bin files. There are no plans to deploy this desktop app to more environments.
+Run ```python main.py``` in the src directory. The app should immediately open in a new window.

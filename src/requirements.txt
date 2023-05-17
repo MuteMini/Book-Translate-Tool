@@ -1,0 +1,7 @@
+numpy
+PyQt6>=6.5.0
+pyqtdarktheme>=2.1.0
+opencv-python>=4.7.0.68
+imutils>=0.5.4
+keras-ocr>=0.9.2
+tensorflow>=2.12.0
