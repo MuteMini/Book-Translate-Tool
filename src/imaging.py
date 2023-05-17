@@ -1,5 +1,6 @@
 from views import View, ViewWidget
 from detection import DocUtils
+import constants
 
 import traceback
 
@@ -48,7 +49,8 @@ class Worker(QRunnable):
         else:
             self.signals.finished.emit()
         finally:
-            self.signals.result.emit(result)
+            if result is not None:
+                self.signals.result.emit(result)
 
     def stop(self):
         with QMutexLocker(self.mutex):
@@ -92,6 +94,7 @@ class LoadWidget(QWidget, ViewWidget):
         self._label.resize(300, 20)
 
         self.worker = None
+        self.pipeline = Pipeline()
         
         layout = QVBoxLayout()
         layout.addStretch(1)
@@ -131,10 +134,6 @@ class LoadWidget(QWidget, ViewWidget):
         print(message)
 
     def _result_thread(self, result):
-        # Happens when thread is force stopped.
-        if result is None:
-            return
-        
         self.worker = None
         
         match result[0]:
@@ -159,7 +158,6 @@ class LoadWidget(QWidget, ViewWidget):
     def _run_full_thread(self, worker_object: Worker, img_paths):
         worker_object.signals.progress.emit(f"Starting Process", 0, 0)
 
-        pipeline = Pipeline()
         sorted(img_paths)
 
         progress = 0
@@ -183,9 +181,12 @@ class LoadWidget(QWidget, ViewWidget):
             if worker_object.is_stop:
                 return None
 
-            mask = DocUtils.text_mask(crop, pipeline)
+            mask = DocUtils.text_mask(crop, self.pipeline)
             final = DocUtils.resized_final(crop, mask, height=600)
             progress += 1
+
+            if worker_object.is_stop:
+                return None
             
             result.append(ImageModel(orig, corner, mask, final))
             
@@ -196,8 +197,6 @@ class LoadWidget(QWidget, ViewWidget):
     def _run_recrop_thread(self, worker_object: Worker, model: ImageModel):
         worker_object.signals.progress.emit(f"Starting Process", 0, 0)
 
-        pipeline = Pipeline()
-
         worker_object.signals.progress.emit(f"Cropping Image", 0, 2)
         if worker_object.is_stop:   
             return None
@@ -206,7 +205,7 @@ class LoadWidget(QWidget, ViewWidget):
         worker_object.signals.progress.emit(f"Removing Text", 1, 2)
         if worker_object.is_stop:
             return None
-        model.tx_mask = DocUtils.text_mask(crop, pipeline)
+        model.tx_mask = DocUtils.text_mask(crop, self.pipeline)
         model.update_final_pix(DocUtils.resized_final(crop, model.tx_mask, height=600))
 
         worker_object.signals.progress.emit("Wrapping up", 1, 1)
@@ -221,12 +220,12 @@ class LoadWidget(QWidget, ViewWidget):
 
         pil_img: list[Image.Image] = []
         for id, model in enumerate(imgs):
-            worker_object.signals.progress.emit(f"Appending page {id}.", progress, limit)
+            worker_object.signals.progress.emit(f"Appending Page {id}", progress, limit)
             if worker_object.is_stop:
                 return None
             
-            crop = DocUtils.crop_document(model.org, model.corner)
-            final = DocUtils.resized_final(crop, model.tx_mask, width=1000)
+            crop = DocUtils.crop_document(model.orig, model.corner)
+            final = DocUtils.resized_final(crop, model.tx_mask, width=constants.SAVE_WIDTH)
             pil_img.append(DocUtils.opencv_to_pil(final))
             progress += 1
 

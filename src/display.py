@@ -395,7 +395,7 @@ class ResultWidget(QWidget, ViewWidget):
         save_name = QFileDialog.getSaveFileName(self, "Save file", 'c:\\', file_type)
         if save_name[0] == "":
             return
-        self.save_file.emit([models], save_name[0], save_name[1].split(' ')[0])
+        self.save_file.emit(models, save_name[0], save_name[1].split(' ')[0])
         self.swap.emit(View.LOAD)
 
     def recieve_result(self, result):
@@ -406,10 +406,9 @@ class ResultWidget(QWidget, ViewWidget):
                     page = PagesWidget(model)
                     page.clicked.connect(self._select_model)
                     page.delete.connect(self._delete_widget)
-                    page.save.connect(lambda m: self._save_model_as(m, "PNG (*.png)"))
+                    page.save.connect(lambda m: self._save_model_as([m], "PNG (*.png)"))
                     self._pages.layout().addWidget(page)
             case 'recrop':
-                print("I am updaing layout!")
                 self.selected.model.content_changed.emit()
             case _:
                 pass
