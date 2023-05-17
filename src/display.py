@@ -40,6 +40,8 @@ class MainWindow(QMainWindow):
 
         self.result_widget.save_file.connect(self.load_widget.save_files)
 
+        self.crop_widget.crop_bound.connect(self.load_widget.recrop_model)
+
         self.stack_layout = QStackedLayout()
         self.stack_layout.addWidget(self.upload_widget)
         self.stack_layout.addWidget(self.load_widget)
@@ -403,10 +405,10 @@ class ResultWidget(QWidget, ViewWidget):
                     page.delete.connect(self._delete_widget)
                     page.save.connect(lambda m: self._save_model_as(m, "PNG (*.png)"))
                     self._pages.layout().addWidget(page)
-            case 'editcrop':
-                pass
+            case 'recrop':
+                self._pages.layout().update()
             case _:
-                print("should not reach here")
+                pass
 
     def _select_model(self, m: ImageModel):
         self.selected.model = m
@@ -426,6 +428,8 @@ class ResultWidget(QWidget, ViewWidget):
 ### ------------------------------------------------------------------------------ ###
 
 class EditCropWidget(QWidget, ViewWidget):
+    crop_bound = pyqtSignal(ImageModel)
+
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -465,6 +469,9 @@ class EditCropWidget(QWidget, ViewWidget):
         self._model_widget.model = m
 
     def _save_edit(self):
+        self._model_widget.model.corner = self._main_widget.crop_bound()
+        self.crop_bound.emit(self._model_widget.model)
+        self.swap.emit(View.LOAD)
         pass
 
 class CropWidget(QLabel):
@@ -527,6 +534,12 @@ class CropWidget(QLabel):
         
         painter.drawPolyline(polyline)
         painter.end()
+
+    def crop_bound(self):
+        points = []
+        for dot in self._dots:
+            points.append((dot.x(), dot.y()))
+        return points
 
     def _canvas_to_dot(self, p: QPointF):
         return QPointF(p.x()/self.width()*self._w, p.y()/self.height()*self._h)

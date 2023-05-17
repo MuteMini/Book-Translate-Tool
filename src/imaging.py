@@ -63,11 +63,14 @@ class ImageModel(QObject):
         self.corner = corner
         self.tx_mask = mask
 
-        h, w, ch = final.shape
-        self.final_pix = QPixmap.fromImage(QImage(final, w, h, ch*w, QImage.Format.Format_BGR888))
-
         h, w, ch = orig.shape
         self.orig_pix = QPixmap.fromImage(QImage(orig, w, h, ch*w, QImage.Format.Format_BGR888))
+
+        self.update_final_pix(final)
+
+    def update_final_pix(self, final):
+        h, w, ch = final.shape
+        self.final_pix = QPixmap.fromImage(QImage(final, w, h, ch*w, QImage.Format.Format_BGR888))
 
 ### ------------------------------------------------------------------------------ ###
 
@@ -109,6 +112,10 @@ class LoadWidget(QWidget, ViewWidget):
     @pyqtSlot(list)
     def recieve_files(self, img_paths):
         self.start_thread(Worker(self._run_full_thread, img_paths))
+
+    @pyqtSlot(ImageModel)
+    def recrop_model(self, model):
+        self.start_thread(Worker(self._run_recrop_thread, model))
 
     @pyqtSlot(list, str, str)
     def save_files(self, img, path, type):
@@ -170,23 +177,37 @@ class LoadWidget(QWidget, ViewWidget):
             crop = DocUtils.crop_document(orig, corner)
             progress += 1
 
-            # For testing purposes skips text removal
-            final = DocUtils.resized_final(crop, None, height=600)
-            result.append(ImageModel(orig, corner, None, final))
+            worker_object.signals.progress.emit(f"Removing Text #{id+1}", progress, limit)
+            if worker_object.is_stop:
+                return None
 
-            # worker_object.signals.progress.emit(f"Removing Text #{id+1}", progress, limit)
-            # if worker_object.is_stop:
-            #     return None
-
-            # mask = DocUtils.text_mask(crop, pipeline)
-            # final = DocUtils.resized_final(crop, mask, height=600)
-            # progress += 1
+            mask = DocUtils.text_mask(crop, pipeline)
+            final = DocUtils.resized_final(crop, mask, height=600)
+            progress += 1
             
-            # result.append(ImageModel(orig, corner, mask, final))
+            result.append(ImageModel(orig, corner, mask, final))
             
         worker_object.signals.progress.emit("Wrapping up", progress, limit)
         K.clear_session()
         return 'inputs', result
+    
+    def _run_recrop_thread(self, worker_object: Worker, model: ImageModel):
+        worker_object.signals.progress.emit(f"Starting Process", 0, 0)
+
+        pipeline = Pipeline()
+
+        worker_object.signals.progress.emit(f"Cropping Image", 0, 2)
+        if worker_object.is_stop:   
+            return None
+        crop = DocUtils.crop_document(model.orig, model.corner)
+
+        worker_object.signals.progress.emit(f"Removing Text", 1, 2)
+        if worker_object.is_stop:
+            return None
+        model.tx_mask = DocUtils.text_mask(crop, pipeline)
+        model.update_final_pix(DocUtils.resized_final(crop, model.tx_mask, height=600))
+
+        return 'recrop', model
     
     def _run_save_thread(self, worker_object: Worker, imgs, path, type):
         worker_object.signals.progress.emit(f"Saving as File", 0, 0)
@@ -210,9 +231,3 @@ class LoadWidget(QWidget, ViewWidget):
 
         worker_object.signals.progress.emit("Done", 1, 1)
         return 'final' if type == "PDF" else "singlesave", None
-
-    def _run_crop_thread(self, worker_object):
-        pass
-
-    def _run_blur_thread(self, worker_object):
-        pass
