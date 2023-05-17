@@ -80,7 +80,6 @@ class LoadWidget(QWidget, ViewWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        # For now, max 1 process at a time. Will experiement and see how much I can parallize
         self._thread_pool = QThreadPool()
         self._thread_pool.setMaxThreadCount(1) 
 
@@ -103,10 +102,9 @@ class LoadWidget(QWidget, ViewWidget):
         
         self.setLayout(layout)
     
-    def closeEvent(self, a0):
+    def stop_worker(self):
         if isinstance(self.worker, Worker):
             self.worker.stop()
-        a0.accept()
 
     # Replace test thread with full thread
     @pyqtSlot(list)
@@ -167,6 +165,7 @@ class LoadWidget(QWidget, ViewWidget):
         progress = 0
         limit = len(img_paths)*2
 
+        crops = []
         result = []
         for id, img in enumerate(img_paths):
             worker_object.signals.progress.emit(f"Cropping Image #{id+1}", progress, limit)
@@ -177,6 +176,9 @@ class LoadWidget(QWidget, ViewWidget):
             crop = DocUtils.crop_document(orig, corner)
             progress += 1
 
+            crops.append((orig, corner, crop))
+
+        for id, (orig, corner, crop) in enumerate(crops):
             worker_object.signals.progress.emit(f"Removing Text #{id+1}", progress, limit)
             if worker_object.is_stop:
                 return None
@@ -187,7 +189,7 @@ class LoadWidget(QWidget, ViewWidget):
             
             result.append(ImageModel(orig, corner, mask, final))
             
-        worker_object.signals.progress.emit("Wrapping up", progress, limit)
+        worker_object.signals.progress.emit("Wrapping up", 1, 1)
         K.clear_session()
         return 'inputs', result
     
@@ -207,6 +209,8 @@ class LoadWidget(QWidget, ViewWidget):
         model.tx_mask = DocUtils.text_mask(crop, pipeline)
         model.update_final_pix(DocUtils.resized_final(crop, model.tx_mask, height=600))
 
+        worker_object.signals.progress.emit("Wrapping up", 1, 1)
+        K.clear_session()
         return 'recrop', model
     
     def _run_save_thread(self, worker_object: Worker, imgs, path, type):

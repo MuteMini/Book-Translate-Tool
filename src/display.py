@@ -19,7 +19,6 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Book Text Remover")
         self.setMinimumSize(400, 300)
         self.setMaximumSize(800, 600)
 
@@ -52,6 +51,10 @@ class MainWindow(QMainWindow):
         container.setLayout(self.stack_layout)
 
         self.setCentralWidget(container)
+
+    def closeEvent(self, a0):
+        self.load_widget.stop_worker()
+        super().closeEvent(a0)
 
     def _set_view(self, v):
         match v:
