@@ -1,10 +1,9 @@
 # Book Translate Tool
 Personal python tool to turn images of non-english books into an easily translatable base-slate pdf.
 
-Currently functions as a set of python files that uses pyQT5 for the GUI. 
+## Installing Program
+First, clone the repository into a folder of your choice. Run this on a Python greater than 3.11.
 
-## Running Desktop App
-Run ```pip install requirements.txt``` to install all modules.
-Tesseract OCR will need to be installed. Follow [this link](https://github.com/tesseract-ocr/tesseract#installing-tesseract) to install properly.
+Perform ```pip install requirements.txt``` in the src file to install all modules.
 
-Go into the src directory and run ```python main.py```. The app should open after loading tesseract.
+Run ```python main.py``` in the src directory. The app should immediately open in a new window.
